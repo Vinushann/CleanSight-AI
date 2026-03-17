@@ -1,0 +1,88 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --purple-primary: #6B21A8;
+  --purple-dark: #581C87;
+  --purple-light: #A855F7;
+  --purple-bg: #F3E8FF;
+  --green-primary: #16A34A;
+  --green-light: #22C55E;
+  --green-bg: #DCFCE7;
+  --gold-primary: #CA8A04;
+  --gold-light: #FACC15;
+  --gold-bg: #FEF9C3;
+  --red-primary: #DC2626;
+  --red-light: #F87171;
+  --red-bg: #FEE2E2;
+  --bg-main: #F8F7FC;
+  --bg-card: #FFFFFF;
+  --text-primary: #1E1B4B;
+  --text-secondary: #6B7280;
+  --border-color: #E9E5F5;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Card styles */
+.cs-card {
+  @apply bg-white rounded-xl border border-purple-100 shadow-sm p-5;
+}
+
+.cs-card-header {
+  @apply text-sm font-semibold text-gray-500 mb-3;
+}
+
+/* Status badges */
+.badge-good {
+  @apply inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold bg-green-100 text-green-700;
+}
+.badge-moderate {
+  @apply inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold bg-yellow-100 text-yellow-700;
+}
+.badge-poor {
+  @apply inline-flex items-center px-4 py-1.5 rounded-full text-sm font-bold bg-red-100 text-red-700;
+}
+
+/* Before / During / After cleaning headers */
+.stage-before {
+  @apply bg-gradient-to-r from-yellow-400 to-yellow-500 text-white text-center py-2 px-6 rounded-lg text-sm font-bold tracking-wide;
+}
+.stage-during {
+  @apply bg-gradient-to-r from-red-400 to-red-500 text-white text-center py-2 px-6 rounded-lg text-sm font-bold tracking-wide;
+}
+.stage-after {
+  @apply bg-gradient-to-r from-green-400 to-green-500 text-white text-center py-2 px-6 rounded-lg text-sm font-bold tracking-wide;
+}
+
+/* Progress bars */
+.progress-bar {
+  @apply h-2.5 rounded-full;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #c4b5fd;
+  border-radius: 8px;
+}
