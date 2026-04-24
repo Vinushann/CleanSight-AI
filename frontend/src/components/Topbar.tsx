@@ -1,6 +1,11 @@
 'use client';
-import { Search, CalendarDays } from 'lucide-react';
+
 import { usePathname } from 'next/navigation';
+import { CalendarDays } from 'lucide-react';
+
+import ThemeSelector from '@/components/ThemeSelector';
+import { useDashboardData } from '@/core/DashboardDataContext';
+import type { SessionType } from '@/core/iotTypes';
 
 const pageTitles: Record<string, string> = {
   '/': 'Dashboard',
@@ -9,28 +14,143 @@ const pageTitles: Record<string, string> = {
   '/modules/vishva/air-quality': 'Gas Sensor Monitoring (MQ135)',
   '/modules/ayathma': 'Temperature Sensor (DHT11)',
   '/modules/ayathma/humidity': 'Humidity Sensor (DHT11)',
+  '/modules/iot': 'IoT Data Collection Control',
   '/modules/nandhika': 'Settings',
 };
+
+const sessionOptions: Array<{ value: SessionType | 'all'; label: string }> = [
+  { value: 'all', label: 'All Sessions' },
+  { value: 'before', label: 'Before' },
+  { value: 'during', label: 'During' },
+  { value: 'after', label: 'After' },
+];
 
 export default function Topbar() {
   const pathname = usePathname();
   const title = pageTitles[pathname] || 'Dashboard';
+  const {
+    houses,
+    rooms,
+    selectedHouseId,
+    selectedRoomId,
+    selectedSessionType,
+    selectedDate,
+    selectedDateTo,
+    loadingFilters,
+    loadingData,
+    setSelectedHouseId,
+    setSelectedRoomId,
+    setSelectedSessionType,
+    setSelectedDate,
+    setSelectedDateTo,
+    applyDateFilter,
+    applySearch,
+  } = useDashboardData();
 
   return (
-    <header className="h-14 flex items-center justify-between px-6 bg-white border-b border-purple-100 sticky top-0 z-20">
-      {/* Page Title */}
-      <h1 className="text-lg font-bold text-purple-800">{title}</h1>
+    <header
+      className="min-h-14 flex items-center justify-between px-6 py-2 sticky top-0 z-20 gap-4"
+      style={{
+        background: 'var(--bg-topbar)',
+        borderBottom: '1px solid var(--border-color)',
+        transition: 'background-color 0.3s ease, border-color 0.3s ease',
+      }}
+    >
+      <h1 className="text-lg font-bold shrink-0" style={{ color: 'var(--text-heading)' }}>{title}</h1>
 
-      {/* Search + Date */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 gap-2">
-          <span className="text-xs text-gray-400">R_Main_3</span>
-          <Search size={16} className="text-purple-600 cursor-pointer" />
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        <div
+          className="flex items-center rounded-lg px-2 py-1.5 gap-2"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
+        >
+          <CalendarDays size={14} style={{ color: 'var(--accent-primary)' }} />
+          <span className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>From</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(event) => setSelectedDate(event.target.value)}
+            className="text-xs bg-transparent outline-none"
+            style={{ color: 'var(--text-primary)' }}
+          />
+          <span className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>To</span>
+          <input
+            type="date"
+            value={selectedDateTo}
+            onChange={(event) => setSelectedDateTo(event.target.value)}
+            className="text-xs bg-transparent outline-none"
+            style={{ color: 'var(--text-primary)' }}
+          />
+          <button
+            type="button"
+            onClick={() => void applyDateFilter()}
+            disabled={loadingFilters}
+            className="rounded px-2 py-1 text-xs font-semibold"
+            style={{
+              background: loadingFilters ? 'var(--border-light)' : 'var(--accent-primary)',
+              color: loadingFilters ? 'var(--text-muted)' : '#FFFFFF',
+            }}
+          >
+            Apply
+          </button>
         </div>
-        <div className="flex items-center bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 gap-2">
-          <span className="text-xs text-gray-400">Date</span>
-          <CalendarDays size={16} className="text-purple-600 cursor-pointer" />
-        </div>
+
+        <select
+          value={selectedHouseId}
+          onChange={(event) => setSelectedHouseId(event.target.value)}
+          disabled={loadingFilters}
+          className="rounded-lg px-2 py-1.5 text-xs min-w-28"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+        >
+          {!houses.length && <option value="">No house</option>}
+          {houses.map((house) => (
+            <option key={house.house_id} value={house.house_id}>
+              {house.house_id}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={selectedRoomId}
+          onChange={(event) => setSelectedRoomId(event.target.value)}
+          disabled={loadingFilters || !rooms.length}
+          className="rounded-lg px-2 py-1.5 text-xs min-w-24"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+        >
+          {!rooms.length && <option value="">No room</option>}
+          {rooms.map((roomId) => (
+            <option key={roomId} value={roomId}>
+              {roomId}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={selectedSessionType}
+          onChange={(event) => setSelectedSessionType(event.target.value as SessionType | 'all')}
+          className="rounded-lg px-2 py-1.5 text-xs min-w-32"
+          style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
+        >
+          {sessionOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        <button
+          type="button"
+          onClick={() => void applySearch()}
+          disabled={loadingFilters || loadingData}
+          className="rounded-lg px-3 py-1.5 text-xs font-semibold"
+          style={{
+            background: loadingFilters || loadingData ? 'var(--border-light)' : 'var(--accent-primary)',
+            color: loadingFilters || loadingData ? 'var(--text-muted)' : '#FFFFFF',
+          }}
+        >
+          {loadingData ? 'Searching...' : 'Search'}
+        </button>
+
+        <ThemeSelector />
       </div>
     </header>
   );
