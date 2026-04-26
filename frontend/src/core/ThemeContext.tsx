@@ -10,9 +10,9 @@ export interface ThemeOption {
 }
 
 export const themeOptions: ThemeOption[] = [
-  { key: 'clean-minimal', label: 'Clean Minimal', description: 'Soft, elegant, presentation-ready' },
-  { key: 'analytical', label: 'Analytical', description: 'Structured, decision-focused' },
-  { key: 'dark-technical', label: 'Dark Technical', description: 'High contrast monitoring' },
+  { key: 'clean-minimal', label: 'Clean Air', description: 'Bright, calm, presentation-ready' },
+  { key: 'analytical', label: 'Clear Contrast', description: 'Sharper contrast for daily operations' },
+  { key: 'dark-technical', label: 'Graphite Night', description: 'Darker, focused, technical workspace' },
 ];
 
 interface ThemeContextValue {

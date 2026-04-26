@@ -15,7 +15,10 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { FileText, ShieldCheck } from 'lucide-react';
 
+import HelpHint from '@/components/HelpHint';
+import HouseCleaningReportModal from '@/components/HouseCleaningReportModal';
 import PersistentContextBar from '@/components/PersistentContextBar';
 import { useDashboardData } from '@/core/DashboardDataContext';
 import {
@@ -26,18 +29,30 @@ import {
   filterByTimeRange,
   METRIC_META,
   metricSummary,
-  stageComparisonInsight,
   statusFromAQI,
   type TimeRangeSelection,
   withTimestampLabel,
 } from '@/core/iotDataUtils';
 import type { MetricKey, SessionType } from '@/core/iotTypes';
-import HelpHint from '@/components/HelpHint';
 
-function statusClass(status: 'good' | 'moderate' | 'poor') {
-  if (status === 'good') return 'badge-good';
-  if (status === 'poor') return 'badge-poor';
-  return 'badge-moderate';
+function getStageValue(stageRows: Array<{ stage: SessionType; value: number }>, stage: SessionType): number {
+  return stageRows.find((row) => row.stage === stage)?.value ?? 0;
+}
+
+function getReductionPercent(before: number, after: number): number | null {
+  if (!before || !Number.isFinite(before) || !Number.isFinite(after)) return null;
+  return Number((((before - after) / before) * 100).toFixed(1));
+}
+
+function formatReduction(value: number | null): string {
+  if (value == null) return 'Not enough before/after data';
+  if (value > 0) return `${value}% lower after cleaning`;
+  if (value < 0) return `${Math.abs(value)}% higher after cleaning`;
+  return 'No after-cleaning change';
+}
+
+function actionLabel(action: string): string {
+  return action.replace(/_/g, ' ');
 }
 
 export default function DashboardPage() {
@@ -46,6 +61,7 @@ export default function DashboardPage() {
   const [metricFocus, setMetricFocus] = useState<MetricKey>('dust');
   const [brushRange, setBrushRange] = useState<TimeRangeSelection | null>(null);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const rows = useMemo(() => withTimestampLabel(data?.readings || []), [data?.readings]);
   const stageFilteredRows = useMemo(
@@ -64,13 +80,32 @@ export default function DashboardPage() {
   const dustByStage = useMemo(() => averageBySessionType(rows, 'dust'), [rows]);
   const airByStage = useMemo(() => averageBySessionType(rows, 'air_quality'), [rows]);
 
-  const metricCard = useMemo(() => metricSummary(linkedRows, metricFocus), [linkedRows, metricFocus]);
   const latestAQI = useMemo(() => metricSummary(linkedRows, 'air_quality').latest, [linkedRows]);
   const decision = useMemo(() => decisionStatusFromDustAir(dustByStage, airByStage), [dustByStage, airByStage]);
-  const stageInsight = useMemo(
-    () => stageComparisonInsight(averageBySessionType(rows, metricFocus), metricFocus),
-    [rows, metricFocus]
-  );
+  const cleaningInsight = useMemo(() => {
+    const dustBefore = getStageValue(dustByStage, 'before');
+    const dustAfter = getStageValue(dustByStage, 'after');
+    const airBefore = getStageValue(airByStage, 'before');
+    const airAfter = getStageValue(airByStage, 'after');
+    const dustReduction = getReductionPercent(dustBefore, dustAfter);
+    const airReduction = getReductionPercent(airBefore, airAfter);
+    const effectiveness = decision.cleaning_effectiveness.replace('_', ' ');
+
+    return {
+      dustReduction,
+      airReduction,
+      headline:
+        decision.cleaning_effectiveness === 'effective'
+          ? 'Cleaning result looks acceptable'
+          : decision.cleaning_effectiveness === 'partially_effective'
+            ? 'Cleaning improved conditions, but needs review'
+            : 'Cleaning needs attention',
+      summary:
+        `Decision: ${effectiveness}. Recommended action: ${actionLabel(decision.recommended_action)}.`,
+      dustLine: `Dust: ${dustBefore.toFixed(2)} -> ${dustAfter.toFixed(2)} ${METRIC_META.dust.unit} (${formatReduction(dustReduction)}).`,
+      airLine: `Air quality: ${airBefore.toFixed(2)} -> ${airAfter.toFixed(2)} ${METRIC_META.air_quality.unit} (${formatReduction(airReduction)}).`,
+    };
+  }, [airByStage, decision, dustByStage]);
   const brushedPoints = linkedRows.length;
   const compareCardDelta = data?.house_context?.selected_room_vs_house;
 
@@ -84,12 +119,29 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col gap-5">
       {!showStartState ? (
-        <PersistentContextBar
-          activeStage={activeStage}
-          selectedSessionId={selectedSessionId}
-          brushedPoints={brushedPoints}
-          onResetInteractions={resetLinkedViews}
-        />
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-start">
+          <div className="min-w-0 flex-1">
+            <PersistentContextBar
+              activeStage={activeStage}
+              selectedSessionId={selectedSessionId}
+              brushedPoints={brushedPoints}
+              onResetInteractions={resetLinkedViews}
+            />
+          </div>
+          <button
+            type="button"
+            onClick={() => setReportOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-3 text-sm font-bold"
+            style={{
+              background: 'var(--accent-primary)',
+              color: '#fff',
+              boxShadow: '0 12px 24px rgba(0, 122, 255, 0.22)',
+            }}
+          >
+            <FileText size={17} />
+            Report
+          </button>
+        </div>
       ) : null}
 
       {error ? (
@@ -101,20 +153,33 @@ export default function DashboardPage() {
       ) : null}
 
       {showStartState ? (
-        <section className="min-h-[62vh] flex items-center justify-center">
+        <section className="min-h-[64vh] flex items-center justify-center">
           <div
-            className="w-full max-w-3xl rounded-2xl border px-8 py-10 text-center"
+            className="w-full max-w-xl rounded-lg border px-8 py-9 text-center"
             style={{
-              borderColor: 'var(--border-active)',
+              borderColor: 'var(--border-color)',
               background:
-                'linear-gradient(160deg, color-mix(in srgb, var(--bg-card) 88%, var(--accent-primary) 12%) 0%, var(--bg-card) 55%)',
+                'linear-gradient(180deg, color-mix(in srgb, var(--bg-card) 92%, var(--bg-main) 8%) 0%, var(--bg-card) 100%)',
+              boxShadow: 'var(--shadow-card)',
+              backdropFilter: 'saturate(180%) blur(22px)',
             }}
           >
-            <h2 className="text-5xl font-black tracking-tight" style={{ color: 'var(--text-heading)' }}>
+            <div
+              className="mx-auto mb-5 grid h-12 w-12 place-items-center rounded-lg"
+              style={{
+                background: 'var(--bg-active)',
+                border: '1px solid var(--border-active)',
+                boxShadow: 'var(--control-inset-shadow, 0 1px 0 rgba(255,255,255,0.8) inset)',
+                color: 'var(--accent-primary)',
+              }}
+            >
+              <ShieldCheck size={24} />
+            </div>
+            <h2 className="text-4xl font-bold" style={{ color: 'var(--text-heading)' }}>
               CleanSight AI
             </h2>
-            <p className="mt-4 text-lg" style={{ color: 'var(--text-secondary)' }}>
-              Please choose the prefered date and house and room from the top right-filter.
+            <p className="mt-4 text-base leading-7" style={{ color: 'var(--text-secondary)' }}>
+              Please choose the preferred date, house, and room from the top-right filters.
             </p>
             <p className="mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
               If you want to see the latest cleaning session, click the button below.
@@ -129,10 +194,11 @@ export default function DashboardPage() {
                   void applySearch();
                 }}
                 disabled={loadingData}
-                className="rounded-xl px-6 py-3 text-base font-bold"
+                className="rounded-lg px-5 py-2.5 text-sm font-bold"
                 style={{
                   background: loadingData ? 'var(--border-light)' : 'var(--accent-primary)',
                   color: loadingData ? 'var(--text-muted)' : '#FFFFFF',
+                  boxShadow: loadingData ? 'none' : '0 10px 22px rgba(0, 122, 255, 0.22)',
                 }}
               >
                 {loadingData ? 'Loading Latest...' : 'See Latest Cleaning Session'}
@@ -201,23 +267,6 @@ export default function DashboardPage() {
                   <p className="cs-card-header mb-0">Overview Trend</p>
                   <HelpHint text="This chart shows how Dust, Air Quality, Temperature, and Humidity change over time." />
                 </div>
-                <div className="flex items-center gap-2">
-                  {(Object.keys(METRIC_META) as MetricKey[]).map((metric) => (
-                    <button
-                      key={metric}
-                      type="button"
-                      onClick={() => setMetricFocus(metric)}
-                      className="rounded-md px-2 py-1 text-xs font-semibold"
-                      style={{
-                        background: metricFocus === metric ? 'var(--bg-active)' : 'var(--bg-input)',
-                        color: metricFocus === metric ? 'var(--text-accent)' : 'var(--text-secondary)',
-                        border: '1px solid var(--border-color)',
-                      }}
-                    >
-                      {METRIC_META[metric].label}
-                    </button>
-                  ))}
-                </div>
               </div>
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
@@ -259,29 +308,49 @@ export default function DashboardPage() {
             <div className="cs-card">
               <p className="cs-card-header">Insight Summary</p>
               <div className="flex flex-col gap-3">
-                <div className={`rounded-md px-3 py-2 text-sm ${statusClass(stageInsight.status)}`}>
-                  {stageInsight.headline}
+                <div
+                  className={`rounded-md px-3 py-2 text-sm ${
+                    decision.cleaning_effectiveness === 'effective'
+                      ? 'badge-good'
+                      : decision.cleaning_effectiveness === 'not_effective'
+                        ? 'badge-poor'
+                        : 'badge-moderate'
+                  }`}
+                >
+                  {cleaningInsight.headline}
                 </div>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{stageInsight.detail}</p>
                 <div className="rounded-md px-3 py-2 text-sm" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
-                  {METRIC_META[metricFocus].label} in current range
+                  <span className="font-semibold" style={{ color: 'var(--text-heading)' }}>Recommended next step</span>
                   <br />
-                  Avg: {metricCard.average.toFixed(2)} {METRIC_META[metricFocus].unit}
-                  <br />
-                  Min/Max: {metricCard.min.toFixed(2)} / {metricCard.max.toFixed(2)}
+                  {cleaningInsight.summary}
                 </div>
                 <div className="rounded-md px-3 py-2 text-sm" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
-                  Suspicious points: {anomalies.length}
+                  <span className="font-semibold" style={{ color: 'var(--text-heading)' }}>Cleaning evidence</span>
                   <br />
-                  Active stage filter: {activeStage}
+                  {cleaningInsight.dustLine}
+                  <br />
+                  {cleaningInsight.airLine}
                 </div>
-                {compareCardDelta ? (
+                <div className="rounded-md px-3 py-2 text-sm" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
+                  <span className="font-semibold" style={{ color: 'var(--text-heading)' }}>Watch points</span>
+                  <br />
+                  {anomalies.length > 0
+                    ? `${anomalies.length} suspicious reading(s) were found in the current view. Review spikes before signing off.`
+                    : 'No suspicious readings were found in the current view.'}
+                  {activeStage !== 'all' ? (
+                    <>
+                      <br />
+                      Viewing only the {activeStage} cleaning stage.
+                    </>
+                  ) : null}
+                </div>
+                {compareCardDelta?.dust_delta || compareCardDelta?.air_quality_delta ? (
                   <div className="rounded-md px-3 py-2 text-sm" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
-                    Selected room vs house average
+                    <span className="font-semibold" style={{ color: 'var(--text-heading)' }}>Room vs house context</span>
                     <br />
-                    Dust: {compareCardDelta.dust_delta?.toFixed(2) ?? '-'}
+                    Dust difference: {compareCardDelta.dust_delta?.toFixed(2) ?? '-'}
                     <br />
-                    Air: {compareCardDelta.air_quality_delta?.toFixed(2) ?? '-'}
+                    Air quality difference: {compareCardDelta.air_quality_delta?.toFixed(2) ?? '-'}
                   </div>
                 ) : null}
               </div>
@@ -340,6 +409,18 @@ export default function DashboardPage() {
             </div>
           </section>
 
+          {data ? (
+            <HouseCleaningReportModal
+              open={reportOpen}
+              onClose={() => setReportOpen(false)}
+              data={data}
+              rows={rows}
+              dustByStage={dustByStage}
+              airByStage={airByStage}
+              anomalies={anomalies}
+              decision={decision}
+            />
+          ) : null}
         </>
       )}
     </div>

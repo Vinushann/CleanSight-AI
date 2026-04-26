@@ -13,8 +13,9 @@ const routeLabels: Record<string, string> = {
   '/modules/ayathma': 'Temperature',
   '/modules/ayathma/humidity': 'Humidity',
   '/modules/iot': 'IoT',
-  '/chatbot': 'Chatbot',
+  '/chatbot': 'CleanSight AI',
   '/modules/nandhika': 'Settings',
+  '/help': 'Help',
 };
 
 function toTitle(segment: string): string {
@@ -38,10 +39,10 @@ export default function Breadcrumbs() {
   });
 
   return (
-    <nav aria-label="Breadcrumb" className="mb-4 flex items-center gap-1 overflow-x-auto text-sm whitespace-nowrap">
+    <nav aria-label="Breadcrumb" className="mb-5 flex items-center gap-1 overflow-x-auto text-[13px] whitespace-nowrap">
       <Link
         href="/"
-        className="inline-flex items-center gap-1 rounded-md px-2 py-1 transition-colors"
+        className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-semibold transition-colors"
         style={{ color: 'var(--text-secondary)' }}
       >
         <House size={14} />
@@ -55,13 +56,13 @@ export default function Breadcrumbs() {
           <div key={crumb.href} className="flex items-center gap-1">
             <ChevronRight size={14} style={{ color: 'var(--text-muted)' }} />
             {isLast ? (
-              <span className="rounded-md px-2 py-1 font-semibold" style={{ color: 'var(--text-accent)' }}>
+              <span className="rounded-md px-2 py-1 font-bold" style={{ color: 'var(--text-accent)' }}>
                 {crumb.label}
               </span>
             ) : (
               <Link
                 href={crumb.href}
-                className="rounded-md px-2 py-1 transition-colors"
+                className="rounded-md px-2 py-1 font-semibold transition-colors"
                 style={{ color: 'var(--text-secondary)' }}
               >
                 {crumb.label}

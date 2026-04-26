@@ -64,9 +64,16 @@ def answer_known_question(messages: list[dict[str, Any]], dashboard_context: dic
     if _asks_current_date(text):
         return f"Today is {_today().strftime('%d-%b-%Y')}."
 
+    if _is_chart_explanation_question(text):
+        return _answer_chart_explanation(messages, text)
+
     follow_up = _answer_follow_up_if_needed(messages, context)
     if follow_up:
         return follow_up
+
+    if _is_cleaned_houses_question(text):
+        date_from, date_to, label = _cleaned_houses_range(text)
+        return _answer_cleaned_houses(date_from, date_to, label)
 
     if _is_sessions_by_date_question(text):
         target_date = _extract_date(text) or _context_date(context) or _today()
@@ -90,6 +97,8 @@ def answer_known_question(messages: list[dict[str, Any]], dashboard_context: dic
         if missing:
             return f"Please tell me the {' and '.join(missing)} so I can visualize the {METRIC_LABELS[metric].lower()} trend."
         date_from, date_to = _date_range_from_text_or_context(text, context)
+        if not date_from and not date_to:
+            date_from, date_to = _recent_cleaned_house_range_from_history(messages)
         return _answer_metric_trend(house_id, room_id, metric, date_from, date_to)
 
     if _is_temperature_session_question(text):
@@ -140,6 +149,10 @@ def _context_session_type(context: dict[str, Any]) -> str | None:
 
 
 def _date_range_from_text_or_context(text: str, context: dict[str, Any]) -> tuple[str | None, str | None]:
+    if "last week" in text or "past week" in text:
+        start, end, _label = _cleaned_houses_range(text)
+        return start, end
+
     parsed = _extract_date(text)
     if parsed:
         return parsed.isoformat(), parsed.isoformat()
@@ -205,6 +218,28 @@ def _is_sessions_for_house_question(text: str) -> bool:
     return "session" in text and "house" in text and any(word in text for word in ("show", "list", "all", "for"))
 
 
+def _is_cleaned_houses_question(text: str) -> bool:
+    asks_house = "house" in text or "houses" in text
+    asks_cleaned = any(word in text for word in ("cleaned", "cleaning", "completed"))
+    asks_listing = any(word in text for word in ("list", "show", "which", "what", "all"))
+    asks_period = any(phrase in text for phrase in ("last week", "past week", "last 7 days", "previous week"))
+    return asks_house and asks_cleaned and asks_listing and asks_period
+
+
+def _is_chart_explanation_question(text: str) -> bool:
+    asks_explain = any(word in text for word in ("explain", "describe", "understand", "interpret"))
+    asks_language_follow_up = _requested_explanation_language(text) is not None
+    return ("chart" in text and asks_explain) or (asks_explain and asks_language_follow_up)
+
+
+def _requested_explanation_language(text: str) -> str | None:
+    if "sinhala" in text or "sinhalese" in text:
+        return "sinhala"
+    if "tamil" in text:
+        return "tamil"
+    return None
+
+
 def _requested_trend_metric(text: str) -> str | None:
     wants_visual = any(word in text for word in ("visualize", "trend", "graph", "chart", "show"))
     if not wants_visual:
@@ -246,6 +281,72 @@ def _answer_follow_up_if_needed(messages: list[dict[str, Any]], context: dict[st
     return None
 
 
+def _cleaned_houses_range(text: str) -> tuple[str, str, str]:
+    today = _today()
+    if "previous week" in text:
+        start = today - timedelta(days=today.weekday() + 7)
+        end = start + timedelta(days=6)
+        return start.isoformat(), end.isoformat(), f"previous calendar week ({start.isoformat()} to {end.isoformat()})"
+
+    end = today
+    start = today - timedelta(days=7)
+    return start.isoformat(), end.isoformat(), f"last 7 days ({start.isoformat()} to {end.isoformat()})"
+
+
+def _recent_cleaned_house_range_from_history(messages: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    for message in reversed(messages[:-1]):
+        if str(message.get("role")) != "assistant":
+            continue
+        content = str(message.get("content") or "")
+        if "house(s) cleaned" not in content.lower():
+            continue
+        match = re.search(r"\((20\d{2}-\d{2}-\d{2})\s+to\s+(20\d{2}-\d{2}-\d{2})\)", content)
+        if match:
+            return match.group(1), match.group(2)
+    return None, None
+
+
+def _answer_cleaned_houses(date_from: str, date_to: str, range_label: str) -> str:
+    sessions = data_service.get_sessions(None, None, None, date_from, date_to)
+    if not sessions:
+        return f"I could not find any cleaned houses in the {range_label}."
+
+    grouped: dict[str, dict[str, Any]] = {}
+    for session in sessions:
+        house_id = str(session.get("house_id") or "Unknown house").strip() or "Unknown house"
+        room_id = str(session.get("room_id") or "Unknown room").strip() or "Unknown room"
+        bucket = grouped.setdefault(
+            house_id,
+            {
+                "rooms": set(),
+                "sessions": 0,
+                "readings": 0,
+                "latest": None,
+            },
+        )
+        bucket["rooms"].add(room_id)
+        bucket["sessions"] += 1
+        bucket["readings"] += int(session.get("total_readings") or 0)
+        session_date = session.get("session_date") or _short_date(session.get("start_time"))
+        if session_date and (bucket["latest"] is None or session_date > bucket["latest"]):
+            bucket["latest"] = session_date
+
+    lines = [
+        f"I found {len(grouped)} house(s) cleaned in the {range_label}.",
+        "Here is the cleaned-house summary:",
+    ]
+    for index, house_id in enumerate(sorted(grouped), start=1):
+        bucket = grouped[house_id]
+        rooms = ", ".join(sorted(bucket["rooms"]))
+        lines.append(
+            f"{index}. {house_id}: {bucket['sessions']} session(s), "
+            f"{len(bucket['rooms'])} room(s) ({rooms}), {bucket['readings']} readings, "
+            f"latest cleaning date {bucket['latest'] or 'unknown'}."
+        )
+
+    return "\n".join(lines)
+
+
 def _known_sessions() -> list[dict[str, Any]]:
     try:
         return data_service.get_sessions()
@@ -255,14 +356,20 @@ def _known_sessions() -> list[dict[str, Any]]:
 
 def _resolve_house_id(question: str, context: dict[str, Any]) -> str | None:
     known_houses = sorted({row["house_id"] for row in _known_sessions() if row.get("house_id")}, key=len, reverse=True)
-    lowered = question.lower()
-    for house_id in known_houses:
-        if house_id.lower() in lowered:
-            return house_id
+    explicit_house = _extract_entity_after_keyword(question, "house")
+    if explicit_house:
+        matched_house = _match_known_entity(explicit_house, known_houses)
+        if matched_house:
+            return matched_house
+
+    matched_house = _match_known_entity(question, known_houses)
+    if matched_house:
+        return matched_house
 
     match = re.search(r"\bhouse(?:\s+(?:id|name))?\s*(?:is|=|:)?\s+([a-zA-Z0-9 _-]+)", question, re.IGNORECASE)
     if match:
-        return _trim_entity(match.group(1))
+        candidate = _trim_entity(match.group(1))
+        return _match_known_entity(candidate, known_houses) or candidate
     context_house = str(context.get("house_id") or "").strip()
     if context_house:
         return context_house
@@ -271,17 +378,66 @@ def _resolve_house_id(question: str, context: dict[str, Any]) -> str | None:
 
 def _resolve_room_id(question: str, context: dict[str, Any]) -> str | None:
     known_rooms = sorted({row["room_id"] for row in _known_sessions() if row.get("room_id")}, key=len, reverse=True)
-    lowered = question.lower()
-    for room_id in known_rooms:
-        if room_id.lower() in lowered:
-            return room_id
+    explicit_room = _extract_entity_after_keyword(question, "room")
+    if explicit_room:
+        matched_room = _match_known_entity(explicit_room, known_rooms)
+        if matched_room:
+            return matched_room
+
+    matched_room = _match_known_entity(question, known_rooms)
+    if matched_room:
+        return matched_room
 
     match = re.search(r"\broom(?:\s+(?:id|name))?\s*(?:is|=|:)?\s+([a-zA-Z0-9 _-]+)", question, re.IGNORECASE)
     if match:
-        return _trim_entity(match.group(1))
+        candidate = _trim_entity(match.group(1))
+        return _match_known_entity(candidate, known_rooms) or candidate
     context_room = str(context.get("room_id") or "").strip()
     if context_room:
         return context_room
+    return None
+
+
+def _extract_entity_after_keyword(question: str, keyword: str) -> str | None:
+    quoted = re.search(
+        rf"\b{keyword}\b(?:\s+(?:id|name))?(?:\s+(?:as|is))?\s*(?:=|:)?\s*[\"']([^\"']+)[\"']",
+        question,
+        re.IGNORECASE,
+    )
+    if quoted:
+        return quoted.group(1).strip()
+
+    plain = re.search(
+        rf"\b{keyword}\b(?:\s+(?:id|name))?(?:\s+(?:as|is))?\s*(?:=|:)?\s+([a-zA-Z0-9 _-]+)",
+        question,
+        re.IGNORECASE,
+    )
+    if plain:
+        return _trim_entity(plain.group(1))
+    return None
+
+
+def _normalize_entity(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _match_known_entity(candidate: str, known_entities: list[str]) -> str | None:
+    normalized_candidate = _normalize_entity(candidate)
+    if not normalized_candidate:
+        return None
+
+    for entity in known_entities:
+        normalized_entity = _normalize_entity(entity)
+        if not normalized_entity:
+            continue
+        if normalized_entity == normalized_candidate:
+            return entity
+
+    for entity in known_entities:
+        normalized_entity = _normalize_entity(entity)
+        if normalized_entity and normalized_entity in normalized_candidate:
+            return entity
+
     return None
 
 
@@ -290,7 +446,7 @@ def _trim_entity(value: str) -> str:
         r"\b(?:on|for|from|to|and|with|session|date|room|house)\b",
         value,
         flags=re.IGNORECASE,
-    )[0].strip(" .,:;-")
+    )[0].strip(" .,:;-\"'")
 
 
 def _answer_sessions_by_date(target_date: date, context: dict[str, Any], question: str) -> str:
@@ -354,15 +510,24 @@ def _answer_metric_trend(
     direction = "increased" if delta > 0 else "decreased" if delta < 0 else "stayed flat"
 
     lines = [
-        f"{label} trend for {house_id} / {room_id}{range_text}",
-        f"Points: {len(points)} | Average: {_fmt(summary.get('avg'))} {METRIC_UNITS[metric]} | "
-        f"Min: {_fmt(summary.get('min'))} | Max: {_fmt(summary.get('max'))}",
-        f"Overall change: {direction} by {abs(delta):.2f} {METRIC_UNITS[metric]} from first to last reading.",
-        "",
-        "Trend sample:",
-        *_sparkline_rows(points, metric),
+        f"Here is the visualization of the {label.lower()} trend for {house_id} / {room_id}{range_text}.",
+        "You can hover over the line to inspect exact readings and use the bottom range selector to zoom into a smaller time window.",
     ]
-    return "\n".join(lines) + "\n\n" + _chart_marker(metric, _chart_points_from_trend(points, metric))
+    chart_summary = {
+        "house_id": house_id,
+        "room_id": room_id,
+        "date_from": date_from,
+        "date_to": date_to,
+        "points_count": len(points),
+        "average": summary.get("avg"),
+        "min": summary.get("min"),
+        "max": summary.get("max"),
+        "first": round(first, 2),
+        "last": round(last, 2),
+        "delta": delta,
+        "direction": direction,
+    }
+    return "\n".join(lines) + "\n\n" + _chart_marker(metric, _chart_points_from_trend(points, metric), chart_summary)
 
 
 def _answer_session_temperature(session_id: str, note: str | None = None) -> str:
@@ -473,22 +638,297 @@ def _chart_points_from_trend(points: list[dict[str, Any]], metric: str) -> list[
         value = point.get("value")
         if not isinstance(value, (int, float)):
             continue
+        recorded_at = point.get("recorded_at")
+        timestamp_ms = point.get("timestamp_ms")
         chart_points.append(
             {
-                "label": str(index),
+                "label": _time_label(recorded_at, timestamp_ms) or str(index),
                 "value": round(float(value), 2),
                 "stage": point.get("session_type"),
+                "recorded_at": recorded_at,
+                "timestamp_ms": timestamp_ms,
             }
         )
     return chart_points
 
 
-def _chart_marker(metric: str, points: list[dict[str, Any]]) -> str:
+def _time_label(recorded_at: Any, timestamp_ms: Any) -> str | None:
+    try:
+        if isinstance(recorded_at, str) and recorded_at:
+            return datetime.fromisoformat(recorded_at).strftime("%I:%M %p").lstrip("0")
+    except ValueError:
+        pass
+    try:
+        ts = float(timestamp_ms)
+        if ts > 0:
+            return datetime.fromtimestamp(ts / 1000, LOCAL_TIMEZONE).strftime("%I:%M %p").lstrip("0")
+    except (TypeError, ValueError, OSError):
+        pass
+    return None
+
+
+def _chart_marker(metric: str, points: list[dict[str, Any]], summary: dict[str, Any] | None = None) -> str:
     payload = {
         "type": "line",
         "metric": metric,
         "label": METRIC_LABELS[metric],
         "unit": METRIC_UNITS[metric],
         "points": points,
+        "summary": summary or {},
     }
     return f"__CLEANSIGHT_CHART__{json.dumps(payload, ensure_ascii=True)}__END_CLEANSIGHT_CHART__"
+
+
+def _last_chart_payload(messages: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for message in reversed(messages[:-1]):
+        if str(message.get("role")) != "assistant":
+            continue
+        content = str(message.get("content") or "")
+        match = re.search(r"__CLEANSIGHT_CHART__([\s\S]*?)__END_CLEANSIGHT_CHART__", content)
+        if not match:
+            continue
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("points"), list):
+            return payload
+    return None
+
+
+def _answer_chart_explanation(messages: list[dict[str, Any]], request_text: str) -> str:
+    chart = _last_chart_payload(messages)
+    if not chart:
+        return "I do not see a chart in this chat yet. Ask me to visualize dust, air quality, temperature, or humidity first, then I can explain it."
+
+    metric = str(chart.get("metric") or "metric")
+    label = str(chart.get("label") or METRIC_LABELS.get(metric, "Metric"))
+    unit = str(chart.get("unit") or METRIC_UNITS.get(metric, "units"))
+    points = [point for point in chart.get("points", []) if isinstance(point.get("value"), (int, float))]
+    if not points:
+        return f"I found the {label.lower()} chart, but it does not contain enough numeric points to explain."
+
+    values = [float(point["value"]) for point in points]
+    first = values[0]
+    last = values[-1]
+    avg = _average(values)
+    minimum = min(values)
+    maximum = max(values)
+    min_index = values.index(minimum)
+    max_index = values.index(maximum)
+    delta = last - first
+    direction = "down" if delta < 0 else "up" if delta > 0 else "flat"
+    stages = _stage_stats(points)
+    language = _requested_explanation_language(request_text) or "english"
+
+    if metric in ("dust", "air_quality"):
+        outcome = (
+            "That is a good sign because lower readings after cleaning usually mean cleaner air."
+            if delta < 0
+            else "That needs attention because the final reading is not lower than the starting reading."
+        )
+    else:
+        outcome = "For comfort metrics, the key question is whether the final value stabilized into the expected range."
+
+    if language == "sinhala":
+        return _answer_chart_explanation_sinhala(
+            label=label,
+            unit=unit,
+            points=points,
+            first=first,
+            last=last,
+            avg=avg,
+            minimum=minimum,
+            maximum=maximum,
+            min_index=min_index,
+            max_index=max_index,
+            delta=delta,
+            direction=direction,
+            stages=stages,
+            lower_is_better=metric in ("dust", "air_quality"),
+        )
+
+    if language == "tamil":
+        return _answer_chart_explanation_tamil(
+            label=label,
+            unit=unit,
+            points=points,
+            first=first,
+            last=last,
+            avg=avg,
+            minimum=minimum,
+            maximum=maximum,
+            min_index=min_index,
+            max_index=max_index,
+            delta=delta,
+            direction=direction,
+            stages=stages,
+            lower_is_better=metric in ("dust", "air_quality"),
+        )
+
+    lines = [
+        f"Here is the full explanation of the {label} chart.",
+        "",
+        f"1. What the chart shows: the X-axis is time and the Y-axis is {label.lower()} in {unit}. Each point is a sensor reading from the selected cleaning window.",
+        f"2. Starting point: the chart begins at {first:.2f} {unit}.",
+        f"3. Ending point: the chart ends at {last:.2f} {unit}, so the overall movement is {direction} by {abs(delta):.2f} {unit}.",
+        f"4. Average level: across the chart, the average reading is {avg:.2f} {unit}.",
+        f"5. Lowest point: {minimum:.2f} {unit} around {points[min_index].get('label', 'the low point')}.",
+        f"6. Highest point: {maximum:.2f} {unit} around {points[max_index].get('label', 'the peak point')}.",
+        f"7. Cleaning interpretation: {outcome}",
+    ]
+
+    if stages:
+        lines.append("8. Stage-by-stage reading:")
+        for stage, stats in stages.items():
+            lines.append(
+                f"- {stage.title()}: average {stats['avg']:.2f} {unit}, min {stats['min']:.2f}, max {stats['max']:.2f}, {stats['count']} point(s)."
+            )
+    else:
+        lines.append("8. Stage-by-stage reading: this chart does not include enough stage labels, so I am reading it as one continuous trend.")
+
+    lines.extend(
+        [
+            "9. How to use it interactively: hover over the line to see exact values, and use the bottom range selector to zoom into a smaller time period.",
+            "10. Bottom line: focus on the peak, the final reading, and whether the after-cleaning section settles lower than the starting level.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _localized_direction(language: str, direction: str) -> str:
+    if language == "sinhala":
+        return {"down": "අඩු වී ඇත", "up": "වැඩි වී ඇත", "flat": "ස්ථාවරව තිබේ"}.get(direction, direction)
+    return {"down": "குறைந்துள்ளது", "up": "அதிகரித்துள்ளது", "flat": "நிலையாக உள்ளது"}.get(direction, direction)
+
+
+def _answer_chart_explanation_sinhala(
+    *,
+    label: str,
+    unit: str,
+    points: list[dict[str, Any]],
+    first: float,
+    last: float,
+    avg: float,
+    minimum: float,
+    maximum: float,
+    min_index: int,
+    max_index: int,
+    delta: float,
+    direction: str,
+    stages: dict[str, dict[str, float | int]],
+    lower_is_better: bool,
+) -> str:
+    interpretation = (
+        "මෙය හොඳ ලක්ෂණයක්. පිරිසිදු කිරීමෙන් පසු කියවීම අඩු වීම සාමාන්‍යයෙන් වාතය/කාමර තත්ත්වය හොඳ වූ බව පෙන්වයි."
+        if lower_is_better and delta < 0
+        else "මෙය තවදුරටත් බලන්න අවශ්‍ය ලක්ෂණයකි. අවසාන කියවීම ආරම්භක කියවීමට වඩා පැහැදිලිව අඩු වී නැත."
+        if lower_is_better
+        else "මෙම මිනුම සඳහා වැදගත් වන්නේ අවසාන අගය සුදුසු පරාසයක ස්ථාවර වූවාද යන්නයි."
+    )
+
+    lines = [
+        f"මෙන්න {label} chart එකේ සම්පූර්ණ පැහැදිලි කිරීම.",
+        "",
+        f"1. මෙම chart එකේ X-axis එකෙන් වේලාව පෙන්වයි. Y-axis එකෙන් {label} අගය {unit} ලෙස පෙන්වයි.",
+        f"2. ආරම්භක කියවීම {first:.2f} {unit}.",
+        f"3. අවසාන කියවීම {last:.2f} {unit}. සමස්ත වෙනස {_localized_direction('sinhala', direction)}: {abs(delta):.2f} {unit}.",
+        f"4. සාමාන්‍ය කියවීම {avg:.2f} {unit}.",
+        f"5. අවම අගය {minimum:.2f} {unit}, {points[min_index].get('label', 'අවම ස්ථානය')} අවට.",
+        f"6. උපරිම අගය {maximum:.2f} {unit}, {points[max_index].get('label', 'උපරිම ස්ථානය')} අවට.",
+        f"7. පිරිසිදු කිරීමේ අර්ථය: {interpretation}",
+    ]
+
+    if stages:
+        lines.append("8. Stage අනුව සාරාංශය:")
+        for stage, stats in stages.items():
+            lines.append(
+                f"- {stage}: average {stats['avg']:.2f} {unit}, min {stats['min']:.2f}, max {stats['max']:.2f}, points {stats['count']}."
+            )
+    else:
+        lines.append("8. Stage data ප්‍රමාණවත් නැති නිසා, මෙය එක් continuous trend එකක් ලෙස කියවිය හැක.")
+
+    lines.extend(
+        [
+            "9. Line එකට hover කළාම නිශ්චිත reading බලන්න පුළුවන්. පහළ range selector එකෙන් කාල පරාසය zoom කරන්න පුළුවන්.",
+            "10. සරලව කියනවා නම්: peak එක, අවසාන reading එක, සහ after-cleaning කොටස ආරම්භයට වඩා හොඳද කියන එක බලන්න.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _answer_chart_explanation_tamil(
+    *,
+    label: str,
+    unit: str,
+    points: list[dict[str, Any]],
+    first: float,
+    last: float,
+    avg: float,
+    minimum: float,
+    maximum: float,
+    min_index: int,
+    max_index: int,
+    delta: float,
+    direction: str,
+    stages: dict[str, dict[str, float | int]],
+    lower_is_better: bool,
+) -> str:
+    interpretation = (
+        "இது நல்ல அறிகுறி. சுத்தம் செய்த பிறகு வாசிப்பு குறைவது பொதுவாக காற்று/அறை நிலை மேம்பட்டுள்ளது என்பதைக் காட்டுகிறது."
+        if lower_is_better and delta < 0
+        else "இதை மேலும் கவனிக்க வேண்டும். இறுதி வாசிப்பு ஆரம்ப வாசிப்பை விட தெளிவாக குறையவில்லை."
+        if lower_is_better
+        else "இந்த அளவீட்டில் முக்கியமானது, இறுதி மதிப்பு ஏற்ற வரம்பில் நிலையாக உள்ளதா என்பதே."
+    )
+
+    lines = [
+        f"இதோ {label} chart பற்றிய முழு விளக்கம்.",
+        "",
+        f"1. இந்த chart-இல் X-axis நேரத்தை காட்டுகிறது. Y-axis {label} மதிப்பை {unit} ஆக காட்டுகிறது.",
+        f"2. ஆரம்ப வாசிப்பு {first:.2f} {unit}.",
+        f"3. இறுதி வாசிப்பு {last:.2f} {unit}. மொத்த மாற்றம் {_localized_direction('tamil', direction)}: {abs(delta):.2f} {unit}.",
+        f"4. சராசரி வாசிப்பு {avg:.2f} {unit}.",
+        f"5. குறைந்த மதிப்பு {minimum:.2f} {unit}, {points[min_index].get('label', 'குறைந்த இடம்')} அருகில்.",
+        f"6. அதிகபட்ச மதிப்பு {maximum:.2f} {unit}, {points[max_index].get('label', 'உச்ச இடம்')} அருகில்.",
+        f"7. சுத்தம் செய்ததன் அர்த்தம்: {interpretation}",
+    ]
+
+    if stages:
+        lines.append("8. Stage அடிப்படையிலான சுருக்கம்:")
+        for stage, stats in stages.items():
+            lines.append(
+                f"- {stage}: average {stats['avg']:.2f} {unit}, min {stats['min']:.2f}, max {stats['max']:.2f}, points {stats['count']}."
+            )
+    else:
+        lines.append("8. Stage data போதுமானதாக இல்லை; எனவே இதை ஒரு continuous trend ஆக வாசிக்கலாம்.")
+
+    lines.extend(
+        [
+            "9. Line மீது hover செய்தால் சரியான reading பார்க்கலாம். கீழே உள்ள range selector மூலம் நேர பகுதியை zoom செய்யலாம்.",
+            "10. சுருக்கமாக: peak, final reading, மற்றும் after-cleaning பகுதி ஆரம்ப நிலையை விட மேம்பட்டதா என்பதை கவனிக்கவும்.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _stage_stats(points: list[dict[str, Any]]) -> dict[str, dict[str, float | int]]:
+    buckets: dict[str, list[float]] = {}
+    for point in points:
+        stage = str(point.get("stage") or "").strip().lower()
+        if stage not in {"before", "during", "after"}:
+            continue
+        buckets.setdefault(stage, []).append(float(point["value"]))
+
+    stats: dict[str, dict[str, float | int]] = {}
+    for stage in ("before", "during", "after"):
+        values = buckets.get(stage)
+        if not values:
+            continue
+        stats[stage] = {
+            "avg": round(_average(values), 2),
+            "min": round(min(values), 2),
+            "max": round(max(values), 2),
+            "count": len(values),
+        }
+    return stats

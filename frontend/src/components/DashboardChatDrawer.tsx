@@ -13,9 +13,13 @@ export default function DashboardChatDrawer() {
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
-        className="fixed bottom-5 right-5 z-40 rounded-full p-3 shadow-lg"
-        style={{ background: 'var(--accent-primary)', color: '#fff' }}
-        aria-label="Toggle chatbot"
+        className="fixed bottom-5 right-5 z-40 rounded-full p-3"
+        style={{
+          background: 'var(--accent-primary)',
+          color: '#fff',
+          boxShadow: '0 14px 30px rgba(0, 122, 255, 0.28), 0 1px 0 rgba(255,255,255,0.35) inset',
+        }}
+        aria-label="Toggle CleanSight AI"
       >
         {open ? <X size={20} /> : <MessageSquare size={20} />}
       </button>
@@ -23,7 +27,7 @@ export default function DashboardChatDrawer() {
       {open && (
         <aside
           className="fixed right-5 bottom-20 z-40 w-[360px] max-w-[92vw] h-[520px] cs-card flex flex-col"
-          style={{ padding: '0.9rem' }}
+          style={{ padding: '0.9rem', backdropFilter: 'saturate(180%) blur(22px)' }}
         >
           <DashboardChatPanel onClose={() => setOpen(false)} />
         </aside>
