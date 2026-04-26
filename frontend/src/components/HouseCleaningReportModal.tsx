@@ -6,7 +6,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   Legend,
   Line,
   LineChart,
@@ -16,6 +15,7 @@ import {
   YAxis,
 } from 'recharts';
 
+import { METRIC_COLORS } from '@/core/chartColors';
 import {
   METRIC_META,
   metricSummary,
@@ -49,12 +49,6 @@ type HouseCleaningReportModalProps = {
   airByStage: StageAverage[];
   anomalies: AnomalyFlag[];
   decision: CleaningDecision;
-};
-
-const stageColors: Record<SessionType, string> = {
-  before: '#EAB308',
-  during: '#F97316',
-  after: '#22C55E',
 };
 
 function formatDateTime(value: string | null | undefined): string {
@@ -131,7 +125,7 @@ function buildStageBars(rows: StageAverage[], label: string, color: string): str
             const x = left + gap * index + gap / 2 - barWidth / 2;
             const y = top + plotHeight - height;
             return `
-              <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="8" fill="${stageColors[row.stage] || color}" />
+              <rect x="${x}" y="${y}" width="${barWidth}" height="${height}" rx="8" fill="${color}" />
               <text x="${x + barWidth / 2}" y="${Math.max(14, y - 8)}" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">${row.value.toFixed(2)}</text>
               <text x="${x + barWidth / 2}" y="${chartHeight - 14}" text-anchor="middle" font-size="12" fill="#334155">${row.stage.toUpperCase()}</text>
             `;
@@ -230,8 +224,8 @@ function buildPrintableReportHtml({
   const temperatureSummary = metricSummary(rows, 'temperature');
   const humiditySummary = metricSummary(rows, 'humidity');
   const generatedAt = new Date().toLocaleString();
-  const dustTrendChart = buildTrendChart(rows, 'dust', 'Dust Trend During Cleaning Window', '#2563eb');
-  const airTrendChart = buildTrendChart(rows, 'air_quality', 'Air Quality Trend During Cleaning Window', '#0891b2');
+  const dustTrendChart = buildTrendChart(rows, 'dust', 'Dust Trend During Cleaning Window', METRIC_COLORS.dust);
+  const airTrendChart = buildTrendChart(rows, 'air_quality', 'Air Quality Trend During Cleaning Window', METRIC_COLORS.air_quality);
 
   return `
     <!doctype html>
@@ -362,8 +356,8 @@ function buildPrintableReportHtml({
 
           <h3 class="section-heading">3. Before / During / After Evidence</h3>
           <section class="charts">
-            ${buildStageBars(dustByStage, 'Dust by Cleaning Stage', '#3b82f6')}
-            ${buildStageBars(airByStage, 'Air Quality by Cleaning Stage', '#14b8a6')}
+            ${buildStageBars(dustByStage, 'Dust by Cleaning Stage', METRIC_COLORS.dust)}
+            ${buildStageBars(airByStage, 'Air Quality by Cleaning Stage', METRIC_COLORS.air_quality)}
           </section>
 
           <div class="page-break"></div>
@@ -831,10 +825,10 @@ export default function HouseCleaningReportModal({
                     <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} />
                     <Tooltip />
                     <Legend formatter={(value) => METRIC_META[value as MetricKey]?.label || value} />
-                    <Line type="monotone" dataKey="dust" name="Dust" stroke="var(--chart-stroke-1)" dot={false} strokeWidth={2} />
-                    <Line type="monotone" dataKey="air_quality" name="Air Quality" stroke="var(--chart-stroke-3)" dot={false} strokeWidth={2} />
-                    <Line type="monotone" dataKey="temperature" name="Temperature" stroke="var(--chart-stroke-2)" dot={false} strokeWidth={1.6} />
-                    <Line type="monotone" dataKey="humidity" name="Humidity" stroke="var(--chart-fill-1)" dot={false} strokeWidth={1.6} />
+                    <Line type="monotone" dataKey="dust" name="Dust" stroke={METRIC_COLORS.dust} dot={false} strokeWidth={2.2} />
+                    <Line type="monotone" dataKey="air_quality" name="Air Quality" stroke={METRIC_COLORS.air_quality} dot={false} strokeWidth={2.2} />
+                    <Line type="monotone" dataKey="temperature" name="Temperature" stroke={METRIC_COLORS.temperature} dot={false} strokeWidth={2.2} />
+                    <Line type="monotone" dataKey="humidity" name="Humidity" stroke={METRIC_COLORS.humidity} dot={false} strokeWidth={2.2} />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
@@ -853,10 +847,8 @@ export default function HouseCleaningReportModal({
                     <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="dust" name="Dust Average" radius={[4, 4, 0, 0]}>
-                      {dustByStage.map((row) => <Cell key={row.stage} fill={stageColors[row.stage]} />)}
-                    </Bar>
-                    <Bar dataKey="air_quality" name="Air Quality Average" fill="var(--chart-fill-2)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="dust" name="Dust Average" fill={METRIC_COLORS.dust} radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="air_quality" name="Air Quality Average" fill={METRIC_COLORS.air_quality} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

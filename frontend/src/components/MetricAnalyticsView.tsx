@@ -16,6 +16,7 @@ import {
 } from 'recharts';
 
 import { useDashboardData } from '@/core/DashboardDataContext';
+import { METRIC_COLORS, SESSION_STAGE_TONES, type StageTone } from '@/core/chartColors';
 import {
   averageBySessionType,
   detectAnomalies,
@@ -156,36 +157,6 @@ type StageMetricCard = {
   percentLabel: string;
   metricCaption: string;
   stats: Array<{ label: string; value: string; fill: number }>;
-};
-
-const STAGE_TONES: Record<SessionType, StageTone> = {
-  before: {
-    accent: '#F5C400',
-    track: 'rgba(245, 196, 0, 0.16)',
-    text: '#9A6A00',
-    glow: '0 16px 36px rgba(245, 196, 0, 0.18)',
-    headerFrom: '#F7D300',
-    headerTo: '#F0B400',
-    panel: 'rgba(255, 246, 208, 0.55)',
-  },
-  during: {
-    accent: '#D8354D',
-    track: 'rgba(216, 53, 77, 0.14)',
-    text: '#A91E35',
-    glow: '0 16px 36px rgba(216, 53, 77, 0.18)',
-    headerFrom: '#D83A52',
-    headerTo: '#CA2E4B',
-    panel: 'rgba(255, 233, 236, 0.58)',
-  },
-  after: {
-    accent: '#35B84B',
-    track: 'rgba(53, 184, 75, 0.14)',
-    text: '#197A2B',
-    glow: '0 16px 36px rgba(53, 184, 75, 0.16)',
-    headerFrom: '#38BA49',
-    headerTo: '#2BAF43',
-    panel: 'rgba(230, 248, 233, 0.62)',
-  },
 };
 
 function clampPercentage(value: number): number {
@@ -374,7 +345,7 @@ function MetricStageProgressPanel({
 
           <div className="mt-5 flex h-72 items-end gap-4 rounded-2xl border px-4 pb-4 pt-8" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
             {stageRows.map((row) => {
-              const tone = STAGE_TONES[row.stage];
+              const tone = SESSION_STAGE_TONES[row.stage];
               const height = Math.max(12, (row.value / maxValue) * 210);
               const isActive = activeStage === row.stage;
 
@@ -411,7 +382,7 @@ function MetricStageProgressPanel({
 
         <div className="grid gap-3">
           {cards.map((card) => {
-            const tone = STAGE_TONES[card.stage];
+            const tone = SESSION_STAGE_TONES[card.stage];
             const isActive = activeStage === card.stage;
             const averageStat = card.stats[0];
 
@@ -677,14 +648,14 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
                   type="monotone"
                   dataKey={metric}
                   name={METRIC_META[metric].label}
-                  stroke="var(--accent-primary)"
+                  stroke={METRIC_COLORS[metric]}
                   strokeWidth={2.4}
                   dot={false}
                 />
                 <Brush
                   dataKey="chartLabel"
                   height={24}
-                  stroke="var(--accent-primary)"
+                  stroke={METRIC_COLORS[metric]}
                   travellerWidth={8}
                   onChange={(event) => {
                     if (!event || event.startIndex == null || event.endIndex == null) {
@@ -748,7 +719,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
                   <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} label={{ value: METRIC_META[metric].axisLabel, angle: -90, position: 'insideLeft', fill: 'var(--text-muted)', fontSize: 11 }} />
                   <Tooltip />
                   <Legend />
-                  <Bar dataKey="avg" name={`Avg ${METRIC_META[metric].label}`} fill="var(--chart-fill-2)" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="avg" name={`Avg ${METRIC_META[metric].label}`} fill={METRIC_COLORS[metric]} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -803,7 +774,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
                   <YAxis tick={{ fontSize: 10, fill: 'var(--text-muted)' }} label={{ value: METRIC_META[metric].axisLabel, angle: -90, position: 'insideLeft', fill: 'var(--text-muted)', fontSize: 11 }} />
                   <Tooltip />
                   <Legend formatter={() => METRIC_META[metric].label} />
-                  <Line type="monotone" dataKey={metric} name={METRIC_META[metric].label} stroke="var(--chart-stroke-3)" strokeWidth={2.5} dot={false} />
+                    <Line type="monotone" dataKey={metric} name={METRIC_META[metric].label} stroke={METRIC_COLORS[metric]} strokeWidth={2.5} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

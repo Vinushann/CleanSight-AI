@@ -21,6 +21,7 @@ import HelpHint from '@/components/HelpHint';
 import HouseCleaningReportModal from '@/components/HouseCleaningReportModal';
 import PersistentContextBar from '@/components/PersistentContextBar';
 import { useDashboardData } from '@/core/DashboardDataContext';
+import { METRIC_COLORS } from '@/core/chartColors';
 import {
   averageBySessionType,
   decisionStatusFromDustAir,
@@ -280,13 +281,14 @@ export default function DashboardPage() {
                       type="monotone"
                       dataKey="dust"
                       name={METRIC_META.dust.label}
-                      stroke="var(--chart-stroke-1)"
-                      strokeWidth={metricFocus === 'dust' ? 3 : 1.6}
+                      stroke={METRIC_COLORS.dust}
+                      strokeWidth={metricFocus === 'dust' ? 3 : 2.1}
+                      strokeOpacity={metricFocus === 'dust' ? 1 : 0.82}
                       dot={false}
                     />
-                    <Line type="monotone" dataKey="air_quality" name={METRIC_META.air_quality.label} stroke="var(--chart-stroke-3)" strokeWidth={metricFocus === 'air_quality' ? 3 : 1.6} dot={false} />
-                    <Line type="monotone" dataKey="temperature" name={METRIC_META.temperature.label} stroke="var(--chart-stroke-2)" strokeWidth={metricFocus === 'temperature' ? 3 : 1.6} dot={false} />
-                    <Line type="monotone" dataKey="humidity" name={METRIC_META.humidity.label} stroke="var(--chart-fill-1)" strokeWidth={metricFocus === 'humidity' ? 3 : 1.6} dot={false} />
+                    <Line type="monotone" dataKey="air_quality" name={METRIC_META.air_quality.label} stroke={METRIC_COLORS.air_quality} strokeWidth={metricFocus === 'air_quality' ? 3 : 2.1} strokeOpacity={metricFocus === 'air_quality' ? 1 : 0.82} dot={false} />
+                    <Line type="monotone" dataKey="temperature" name={METRIC_META.temperature.label} stroke={METRIC_COLORS.temperature} strokeWidth={metricFocus === 'temperature' ? 3 : 2.1} strokeOpacity={metricFocus === 'temperature' ? 1 : 0.82} dot={false} />
+                    <Line type="monotone" dataKey="humidity" name={METRIC_META.humidity.label} stroke={METRIC_COLORS.humidity} strokeWidth={metricFocus === 'humidity' ? 3 : 2.1} strokeOpacity={metricFocus === 'humidity' ? 1 : 0.82} dot={false} />
                     <Brush
                       dataKey="chartLabel"
                       height={24}
@@ -371,6 +373,7 @@ export default function DashboardPage() {
                     <Bar
                       dataKey="value"
                       name="Dust Average"
+                      fill={METRIC_COLORS.dust}
                       onClick={(row: any) => {
                         if (row?.stage) {
                           setActiveStage(row.stage as SessionType);
@@ -381,8 +384,8 @@ export default function DashboardPage() {
                       {dustByStage.map((row) => (
                         <Cell
                           key={row.stage}
-                          fill={activeStage === row.stage ? 'var(--accent-primary)' : 'var(--chart-fill-1)'}
-                          stroke={activeStage === row.stage ? 'var(--accent-secondary)' : 'transparent'}
+                          fill={METRIC_COLORS.dust}
+                          stroke={activeStage === row.stage ? 'var(--accent-primary)' : 'transparent'}
                           strokeWidth={1}
                         />
                       ))}
@@ -402,7 +405,7 @@ export default function DashboardPage() {
                     <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} label={{ value: METRIC_META.air_quality.axisLabel, angle: -90, position: 'insideLeft', fill: 'var(--text-muted)', fontSize: 11 }} />
                     <Tooltip />
                     <Legend />
-                    <Bar dataKey="value" name="Air Quality Average" fill="var(--chart-fill-2)" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="value" name="Air Quality Average" fill={METRIC_COLORS.air_quality} radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

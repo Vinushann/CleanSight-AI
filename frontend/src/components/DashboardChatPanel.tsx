@@ -29,6 +29,7 @@ import {
 } from 'recharts';
 
 import { useDashboardData } from '@/core/DashboardDataContext';
+import { getMetricColor, getStageTone } from '@/core/chartColors';
 
 const chartPattern = /__CLEANSIGHT_CHART__([\s\S]*?)__END_CLEANSIGHT_CHART__/;
 const CHAT_SESSIONS_STORAGE_KEY = 'cleansight.dashboard-chat.sessions.v1';
@@ -247,18 +248,11 @@ function chartTitle(chart: ChatChartPayload): string {
 }
 
 function metricStroke(metric: string): string {
-  if (metric === 'dust') return '#087BF8';
-  if (metric === 'air_quality') return '#16A34A';
-  if (metric === 'temperature') return '#EA580C';
-  if (metric === 'humidity') return '#0891B2';
-  return 'var(--accent-primary)';
+  return getMetricColor(metric);
 }
 
 function stageColor(stage?: string): string {
-  if (stage === 'before') return '#F5C400';
-  if (stage === 'during') return '#D93255';
-  if (stage === 'after') return '#2FB344';
-  return '#087BF8';
+  return getStageTone(stage).accent;
 }
 
 function formatSummaryValue(value: number | null | undefined, unit: string): string {
