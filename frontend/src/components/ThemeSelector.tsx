@@ -29,7 +29,7 @@ export default function ThemeSelector() {
         aria-label="Select theme"
       >
         <Palette size={15} />
-        <span className="hidden sm:inline">{current.label}</span>
+        <span className="a11y-icon-label hidden sm:inline">{current.label}</span>
         <ChevronDown size={14} className={`transition-transform duration-200 ${open ? 'rotate-180' : ''}`} />
       </button>
 

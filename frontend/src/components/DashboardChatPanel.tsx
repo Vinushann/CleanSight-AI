@@ -1,9 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Message } from 'ai/react';
 import { useChat } from 'ai/react';
-import { MessageSquarePlus, Plus, Square, Volume2, X } from 'lucide-react';
+import {
+  Bot,
+  ExternalLink,
+  MessageSquarePlus,
+  Plus,
+  SendHorizontal,
+  Sparkles,
+  Square,
+  UserRound,
+  Volume2,
+  X,
+} from 'lucide-react';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Brush,
@@ -133,8 +145,23 @@ function normalizeStoredMessages(messages: Message[]): Message[] {
     ) {
       return WELCOME_MESSAGE;
     }
+    if (message.role === 'assistant') {
+      return {
+        ...message,
+        content: sanitizeAssistantContent(message.content),
+      };
+    }
     return message;
   });
+}
+
+function sanitizeAssistantContent(content: string): string {
+  return content
+    .replace(
+      /\n\nNext demo step: ask me to visualize dust for a house and room, for example:\nplease visualize the dust in the house "fern" and room as "room1"/g,
+      ''
+    )
+    .trim();
 }
 
 function deriveSessionTitle(messages: Message[], fallback: string): string {
@@ -236,6 +263,10 @@ function stageColor(stage?: string): string {
 
 function formatSummaryValue(value: number | null | undefined, unit: string): string {
   return typeof value === 'number' ? `${value.toFixed(2)} ${unit}` : '-';
+}
+
+function stopBrowserSpeech() {
+  window.speechSynthesis?.cancel();
 }
 
 function ChatInlineChart({ chart }: { chart: ChatChartPayload }) {
@@ -404,37 +435,79 @@ function ChatMessageBubble({
 }) {
   const parsed = parseMessageContent(content);
   const canSpeak = role === 'assistant' && parsed.text.trim().length > 0;
+  const isUser = role === 'user';
+  const displayName = isUser ? 'You' : 'CleanSight AI';
+  const displayText = role === 'assistant' ? sanitizeAssistantContent(parsed.text) : parsed.text;
 
   return (
-    <div
-      className="rounded-lg px-3 py-2 text-sm whitespace-pre-wrap"
-      style={{
-        background: role === 'user' ? 'var(--bg-active)' : 'var(--bg-input)',
-        color: 'var(--text-primary)',
-      }}
-    >
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-          {role}
-        </p>
-        {canSpeak ? (
-          <button
-            type="button"
-            onClick={() => onSpeak(id, parsed.text)}
-            className="rounded-full p-1 transition hover:scale-105"
-            style={{
-              color: isSpeaking ? 'var(--accent-primary)' : 'var(--text-muted)',
-              background: isSpeaking ? 'var(--bg-card)' : 'transparent',
-            }}
-            aria-label={isSpeaking ? 'Stop reading assistant message' : 'Read assistant message aloud'}
-            title={isSpeaking ? 'Stop reading' : 'Read aloud'}
-          >
-            {isSpeaking ? <Square size={14} /> : <Volume2 size={15} />}
-          </button>
-        ) : null}
+    <div className={`flex gap-2.5 ${isUser ? 'justify-end' : 'justify-start'}`}>
+      {!isUser ? (
+        <div
+          className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full"
+          style={{
+            background: 'var(--bg-input)',
+            color: 'var(--accent-primary)',
+            border: '1px solid var(--border-color)',
+          }}
+        >
+          <Bot size={15} />
+        </div>
+      ) : null}
+
+      <div className={`min-w-0 ${isUser ? 'max-w-[74%]' : 'max-w-[88%] flex-1'}`}>
+        <div className={`mb-1 flex items-center gap-2 ${isUser ? 'justify-end' : 'justify-between'}`}>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--text-muted)' }}>
+            {displayName}
+          </p>
+          {canSpeak ? (
+            <button
+              type="button"
+              onClick={() => onSpeak(id, displayText)}
+              className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-semibold transition hover:opacity-80"
+              style={{
+                color: isSpeaking ? 'var(--accent-primary)' : 'var(--text-muted)',
+                background: 'transparent',
+                border: '1px solid transparent',
+              }}
+              aria-label={isSpeaking ? 'Stop reading assistant message' : 'Read assistant message aloud with AI-generated voice'}
+              title={isSpeaking ? 'Stop reading' : 'Read aloud with AI voice'}
+            >
+              {isSpeaking ? <Square size={13} /> : <Volume2 size={14} />}
+              <span className="hidden sm:inline">{isSpeaking ? 'Stop' : 'Voice'}</span>
+            </button>
+          ) : null}
+        </div>
+
+        <div
+          className="rounded-2xl px-4 py-3 text-sm leading-6 whitespace-pre-wrap"
+          style={{
+            background: isUser
+              ? 'var(--accent-primary)'
+              : 'color-mix(in srgb, var(--bg-input) 78%, var(--bg-card) 22%)',
+            color: isUser ? '#fff' : 'var(--text-primary)',
+            border: isUser ? '1px solid var(--accent-primary)' : '1px solid var(--border-light)',
+            boxShadow: 'none',
+            borderTopRightRadius: isUser ? 6 : 18,
+            borderTopLeftRadius: isUser ? 18 : 6,
+          }}
+        >
+          {displayText}
+          {role === 'assistant' && parsed.chart ? <ChatInlineChart chart={parsed.chart} /> : null}
+        </div>
       </div>
-      {parsed.text}
-      {role === 'assistant' && parsed.chart ? <ChatInlineChart chart={parsed.chart} /> : null}
+
+      {isUser ? (
+        <div
+          className="mt-1 grid h-7 w-7 shrink-0 place-items-center rounded-full"
+          style={{
+            background: 'var(--bg-active)',
+            color: 'var(--accent-primary)',
+            border: '1px solid var(--border-active)',
+          }}
+        >
+          <UserRound size={14} />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -444,6 +517,7 @@ type DashboardChatPanelProps = {
   onClose?: () => void;
   className?: string;
   showSessionSidebar?: boolean;
+  showFullPageLink?: boolean;
 };
 
 export default function DashboardChatPanel({
@@ -451,6 +525,7 @@ export default function DashboardChatPanel({
   onClose,
   className = '',
   showSessionSidebar = false,
+  showFullPageLink = false,
 }: DashboardChatPanelProps) {
   const pathname = usePathname();
   const [sessions, setSessions] = useState<StoredChatSession[]>([]);
@@ -458,6 +533,9 @@ export default function DashboardChatPanel({
   const [hasHydratedSessions, setHasHydratedSessions] = useState(false);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const speechRequestRef = useRef(0);
   const {
     selectedHouseId,
     selectedRoomId,
@@ -563,7 +641,11 @@ export default function DashboardChatPanel({
     window.speechSynthesis.addEventListener('voiceschanged', loadVoices);
 
     return () => {
-      window.speechSynthesis.cancel();
+      stopBrowserSpeech();
+      audioRef.current?.pause();
+      if (audioUrlRef.current) {
+        URL.revokeObjectURL(audioUrlRef.current);
+      }
       window.speechSynthesis.removeEventListener('voiceschanged', loadVoices);
     };
   }, []);
@@ -597,10 +679,24 @@ export default function DashboardChatPanel({
     [activeSessionId, sessions]
   );
 
+  const stopAudioPlayback = () => {
+    speechRequestRef.current += 1;
+    stopBrowserSpeech();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+      audioRef.current = null;
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    setSpeakingMessageId(null);
+  };
+
   const createNewChat = () => {
     stop();
-    window.speechSynthesis?.cancel();
-    setSpeakingMessageId(null);
+    stopAudioPlayback();
 
     const nextSession = createSession();
     setSessions((currentSessions) => [nextSession, ...currentSessions]);
@@ -613,25 +709,19 @@ export default function DashboardChatPanel({
     if (session.id === activeSessionId) return;
 
     stop();
-    window.speechSynthesis?.cancel();
-    setSpeakingMessageId(null);
+    stopAudioPlayback();
     setActiveSessionId(session.id);
     setInput('');
     setMessages(session.messages);
   };
 
-  const speakAssistantMessage = (messageId: string, text: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
-
-    if (speakingMessageId === messageId) {
-      window.speechSynthesis.cancel();
+  const speakWithBrowserFallback = (messageId: string, speechText: string, speechLanguage: 'ta' | 'si' | 'en') => {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       setSpeakingMessageId(null);
       return;
     }
 
-    window.speechSynthesis.cancel();
-    const speechText = text.replace(/\s+/g, ' ').trim();
-    const speechLanguage = detectSpeechLanguage(speechText);
+    stopBrowserSpeech();
     const utterance = new SpeechSynthesisUtterance(speechText);
     const naturalVoice = pickNaturalVoice(availableVoices, speechLanguage);
     if (naturalVoice) {
@@ -646,8 +736,59 @@ export default function DashboardChatPanel({
     utterance.onend = () => setSpeakingMessageId(null);
     utterance.onerror = () => setSpeakingMessageId(null);
 
-    setSpeakingMessageId(messageId);
     window.speechSynthesis.speak(utterance);
+  };
+
+  const speakAssistantMessage = async (messageId: string, text: string) => {
+    if (typeof window === 'undefined') return;
+
+    if (speakingMessageId === messageId) {
+      stopAudioPlayback();
+      return;
+    }
+
+    const speechText = text.replace(/\s+/g, ' ').trim();
+    if (!speechText) return;
+
+    stopAudioPlayback();
+    const requestId = speechRequestRef.current + 1;
+    speechRequestRef.current = requestId;
+    setSpeakingMessageId(messageId);
+    const speechLanguage = detectSpeechLanguage(speechText);
+
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: speechText, language: speechLanguage }),
+      });
+
+      if (!response.ok) {
+        throw new Error('OpenAI text-to-speech is unavailable.');
+      }
+
+      const audioBlob = await response.blob();
+      if (speechRequestRef.current !== requestId) return;
+
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      audioRef.current = audio;
+      audioUrlRef.current = audioUrl;
+      audio.onended = () => {
+        if (audioRef.current === audio) {
+          stopAudioPlayback();
+        }
+      };
+      audio.onerror = () => {
+        if (audioRef.current === audio) {
+          stopAudioPlayback();
+        }
+      };
+      await audio.play();
+    } catch {
+      if (speechRequestRef.current !== requestId) return;
+      speakWithBrowserFallback(messageId, speechText, speechLanguage);
+    }
   };
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -667,27 +808,43 @@ export default function DashboardChatPanel({
 
   return (
     <div
-      className={`h-full min-h-0 ${
-        showSessionSidebar ? 'flex flex-col gap-3 lg:flex-row' : 'flex flex-col'
+      className={`h-full min-h-0 w-full rounded-2xl ${
+        showSessionSidebar
+          ? 'grid grid-rows-[auto_minmax(0,1fr)] gap-3 lg:grid-cols-[20rem_minmax(0,1fr)] lg:grid-rows-1'
+          : 'flex flex-col'
       } ${className}`}
+      style={{
+        background: 'var(--bg-card)',
+      }}
     >
       {showSessionSidebar ? (
         <aside
-          className="min-h-0 rounded-xl p-3 lg:w-72 lg:shrink-0"
-          style={{ background: 'var(--bg-input)', border: '1px solid var(--border-color)' }}
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl p-3"
+          style={{
+            background: 'color-mix(in srgb, var(--bg-input) 82%, var(--bg-card) 18%)',
+            border: '1px solid var(--border-color)',
+          }}
           aria-label="Chat history"
         >
           <button
             type="button"
             onClick={createNewChat}
-            className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold"
-            style={{ background: 'var(--accent-primary)', color: '#fff' }}
+            className="mb-3 flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition hover:opacity-90"
+            style={{
+              background: 'var(--accent-primary)',
+              color: '#fff',
+              boxShadow: 'none',
+            }}
           >
             <Plus size={16} />
             New chat
           </button>
 
-          <div className="max-h-40 space-y-2 overflow-y-auto pr-1 lg:max-h-none">
+          <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--text-muted)' }}>
+            Recent conversations
+          </p>
+
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
             {sortedSessions.map((session) => {
               const isActive = session.id === activeSessionId;
               const userMessageCount = session.messages.filter((message) => message.role === 'user').length;
@@ -697,14 +854,15 @@ export default function DashboardChatPanel({
                   key={session.id}
                   type="button"
                   onClick={() => selectSession(session)}
-                  className="w-full rounded-lg px-3 py-2 text-left transition hover:scale-[1.01]"
+                  className="w-full rounded-xl px-3 py-2.5 text-left transition hover:opacity-90"
                   style={{
-                    background: isActive ? 'var(--bg-active)' : 'var(--bg-card)',
-                    border: `1px solid ${isActive ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                    background: isActive ? 'var(--bg-active)' : 'transparent',
+                    border: `1px solid ${isActive ? 'var(--border-active)' : 'transparent'}`,
                     color: 'var(--text-primary)',
+                    boxShadow: 'none',
                   }}
                 >
-                  <span className="line-clamp-1 block text-sm font-semibold">{session.title}</span>
+                  <span className="line-clamp-2 block text-sm font-semibold leading-5">{session.title}</span>
                   <span className="mt-1 block text-xs" style={{ color: 'var(--text-muted)' }}>
                     {userMessageCount} message{userMessageCount === 1 ? '' : 's'} - {formatSessionTime(session.updatedAt)}
                   </span>
@@ -715,29 +873,62 @@ export default function DashboardChatPanel({
         </aside>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div
-          className="mb-2 flex items-center justify-between gap-2 pb-2"
-          style={{ borderBottom: '1px solid var(--border-color)' }}
+          className="mb-3 flex items-center justify-between gap-3 rounded-2xl px-3 py-2.5"
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-light)',
+            boxShadow: 'none',
+          }}
         >
-          <div className="min-w-0">
-            <h2 className="font-semibold" style={{ color: 'var(--text-heading)' }}>
-              {title}
-            </h2>
-            {activeSession ? (
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <div
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-xl"
+              style={{
+                background: 'var(--bg-active)',
+                color: 'var(--accent-primary)',
+                border: '1px solid var(--border-active)',
+              }}
+            >
+              <Sparkles size={17} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold leading-tight" style={{ color: 'var(--text-heading)' }}>
+                {title}
+              </h2>
               <p className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
-                {activeSession.title}
+                {activeSession?.title || 'Ask about cleaning sessions, charts, and reports'}
               </p>
-            ) : null}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
+            {showFullPageLink ? (
+              <Link
+                href="/chatbot"
+                className="rounded-xl p-2 transition hover:opacity-80"
+                style={{
+                  background: 'var(--bg-active)',
+                  color: 'var(--accent-primary)',
+                  border: '1px solid var(--border-active)',
+                }}
+                aria-label="Open full CleanSight AI page"
+                title="Open full CleanSight AI page"
+              >
+                <ExternalLink size={18} />
+              </Link>
+            ) : null}
             {!showSessionSidebar ? (
               <button
                 type="button"
                 onClick={createNewChat}
-                className="rounded-lg p-2"
-                style={{ background: 'var(--bg-input)', color: 'var(--accent-primary)' }}
+                className="rounded-xl p-2 transition hover:opacity-80"
+                style={{
+                  background: 'var(--bg-active)',
+                  color: 'var(--accent-primary)',
+                  border: '1px solid var(--border-active)',
+                }}
                 aria-label="Create new chat"
                 title="New chat"
               >
@@ -748,7 +939,8 @@ export default function DashboardChatPanel({
               <button
                 type="button"
                 onClick={onClose}
-                style={{ color: 'var(--text-muted)' }}
+                className="rounded-xl p-2 transition hover:opacity-80"
+                style={{ color: 'var(--text-muted)', background: 'var(--bg-input)' }}
                 aria-label="Close chatbot"
               >
                 <X size={18} />
@@ -757,7 +949,13 @@ export default function DashboardChatPanel({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+        <div
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto rounded-2xl p-4"
+          style={{
+            background: 'color-mix(in srgb, var(--bg-input) 68%, var(--bg-card) 32%)',
+            border: '1px solid var(--border-light)',
+          }}
+        >
           {messages.map((message) => (
             <ChatMessageBubble
               key={message.id}
@@ -770,10 +968,19 @@ export default function DashboardChatPanel({
           ))}
           {isLoading && (
             <div
-              className="rounded-lg px-3 py-2 text-sm"
-              style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}
+              className="inline-flex items-center gap-2 rounded-2xl px-3 py-2 text-sm"
+              style={{
+                background: 'var(--bg-card)',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--border-color)',
+                boxShadow: 'none',
+              }}
             >
-              Assistant is thinking...
+              <span
+                className="h-2 w-2 animate-pulse rounded-full"
+                style={{ background: 'var(--accent-primary)' }}
+              />
+              CleanSight AI is thinking...
             </div>
           )}
           {error && (
@@ -786,28 +993,38 @@ export default function DashboardChatPanel({
           )}
         </div>
 
-        <form onSubmit={onSubmit} className="mt-2 pt-2" style={{ borderTop: '1px solid var(--border-color)' }}>
+        <form
+          onSubmit={onSubmit}
+          className="mt-3 rounded-2xl p-2"
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-light)',
+            boxShadow: 'none',
+          }}
+        >
           <div className="flex gap-2">
             <input
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Ask about trends, anomalies, comparisons..."
-              className="flex-1 rounded-lg px-3 py-2 text-sm"
+              placeholder="Ask CleanSight AI about trends, cleaned houses, reports..."
+              className="flex-1 rounded-xl px-3 py-2.5 text-sm outline-none"
               style={{
                 background: 'var(--bg-input)',
-                border: '1px solid var(--border-color)',
+                border: '1px solid var(--border-light)',
                 color: 'var(--text-primary)',
               }}
             />
             <button
               type="submit"
               disabled={isLoading}
-              className="rounded-lg px-3 py-2 text-sm font-semibold"
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition hover:opacity-90"
               style={{
                 background: isLoading ? 'var(--border-light)' : 'var(--accent-primary)',
                 color: isLoading ? 'var(--text-muted)' : '#fff',
+                boxShadow: 'none',
               }}
             >
+              <SendHorizontal size={16} />
               Send
             </button>
           </div>

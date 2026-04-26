@@ -1,5 +1,7 @@
 'use client';
 
+import AccessibilitySettings from '@/components/AccessibilitySettings';
+
 export default function SettingsPage() {
   return (
     <div className="flex flex-col gap-5">
@@ -73,6 +75,8 @@ export default function SettingsPage() {
           </div>
           <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Only system administrators can adjust global anomaly thresholds.</p>
         </div>
+
+        <AccessibilitySettings />
       </div>
     </div>
   );

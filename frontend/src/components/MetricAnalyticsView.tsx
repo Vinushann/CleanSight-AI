@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Bar,
+  BarChart,
   Brush,
   CartesianGrid,
   Legend,
@@ -493,6 +495,24 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
     [linkedRows, selectedSessionId]
   );
 
+  const sessionBars = useMemo(
+    () =>
+      (data?.sessions || [])
+        .map((session) => {
+          const sessionRows = linkedRows.filter((row) => row.session_id === session.session_id);
+          if (!sessionRows.length) return null;
+          const avg =
+            sessionRows.reduce((sum, row) => sum + Number(row[metric] || 0), 0) / sessionRows.length;
+          return {
+            session_id: session.session_id,
+            session_type: session.session_type,
+            avg: Number(avg.toFixed(2)),
+          };
+        })
+        .filter((row): row is { session_id: string; session_type: SessionType; avg: number } => row !== null),
+    [data?.sessions, linkedRows, metric]
+  );
+
   const roomDelta = data?.house_context?.selected_room_vs_house?.[
     `${metric}_delta` as 'dust_delta' | 'air_quality_delta' | 'temperature_delta' | 'humidity_delta'
   ];
@@ -715,6 +735,26 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
         activeStage={activeStage}
         onSelectStage={setActiveStage}
       />
+
+      {metric !== 'dust' ? (
+        <section className="grid grid-cols-1 gap-5">
+          <div className="cs-card">
+            <p className="cs-card-header">Session-level Comparison</p>
+            <div className="h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={sessionBars.map((row) => ({ ...row, session_label: formatSessionLabel({ house_id: data.sessions?.find((session) => session.session_id === row.session_id)?.house_id || '-', room_id: data.sessions?.find((session) => session.session_id === row.session_id)?.room_id || '-', session_type: row.session_type }) }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--chart-grid)" />
+                  <XAxis dataKey="session_label" tick={{ fontSize: 10, fill: 'var(--text-muted)' }} label={{ value: 'House + Room + Stage', position: 'insideBottom', offset: -5, fill: 'var(--text-muted)', fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} label={{ value: METRIC_META[metric].axisLabel, angle: -90, position: 'insideLeft', fill: 'var(--text-muted)', fontSize: 11 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="avg" name={`Avg ${METRIC_META[metric].label}`} fill="var(--chart-fill-2)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         <div className="cs-card">

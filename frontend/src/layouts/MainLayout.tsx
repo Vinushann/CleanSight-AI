@@ -3,6 +3,7 @@ import { ReactNode } from 'react';
 import Sidebar from '@/components/Sidebar';
 import Topbar from '@/components/Topbar';
 import Breadcrumbs from '@/components/Breadcrumbs';
+import DashboardChatDrawer from '@/components/DashboardChatDrawer';
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   return (
@@ -22,6 +23,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      <DashboardChatDrawer />
     </div>
   );
 }
