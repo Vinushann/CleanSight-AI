@@ -16,7 +16,7 @@ import {
 } from 'recharts';
 
 import { useDashboardData } from '@/core/DashboardDataContext';
-import { METRIC_COLORS, SESSION_STAGE_TONES, type StageTone } from '@/core/chartColors';
+import { METRIC_COLORS, getPerformanceTone, type PerformanceToneKey, type StageTone } from '@/core/chartColors';
 import {
   averageBySessionType,
   detectAnomalies,
@@ -62,6 +62,36 @@ function formatMetricValue(value: number, metric: MetricKey): string {
   return `${value.toFixed(2)} ${METRIC_META[metric].unit}`;
 }
 
+function isLowerIsBetterMetric(metric: MetricKey): boolean {
+  return metric === 'dust' || metric === 'air_quality' || metric === 'temperature' || metric === 'humidity';
+}
+
+function getStagePerformanceRanks(
+  stageRows: Array<{ stage: SessionType; value: number }>,
+  lowerIsBetter: boolean
+): Record<SessionType, PerformanceToneKey> {
+  const stageOrder: SessionType[] = ['before', 'during', 'after'];
+  const sortedRows = [...stageRows].sort((left, right) => {
+    if (left.value === right.value) {
+      return stageOrder.indexOf(left.stage) - stageOrder.indexOf(right.stage);
+    }
+
+    return lowerIsBetter ? left.value - right.value : right.value - left.value;
+  });
+
+  const ranks: Record<SessionType, PerformanceToneKey> = {
+    before: 'middle',
+    during: 'middle',
+    after: 'middle',
+  };
+
+  sortedRows.forEach((row, index) => {
+    ranks[row.stage] = index === 0 ? 'best' : index === sortedRows.length - 1 ? 'worst' : 'middle';
+  });
+
+  return ranks;
+}
+
 function buildMetricInsight({
   metric,
   stageRows,
@@ -82,7 +112,7 @@ function buildMetricInsight({
   const before = stageRows.find((row) => row.stage === 'before')?.value ?? 0;
   const during = stageRows.find((row) => row.stage === 'during')?.value ?? 0;
   const after = stageRows.find((row) => row.stage === 'after')?.value ?? 0;
-  const lowerIsBetter = metric === 'dust' || metric === 'air_quality';
+  const lowerIsBetter = isLowerIsBetterMetric(metric);
   const hasBeforeAfter = before > 0 && after > 0;
   const delta = after - before;
   const improvementPercentValue = hasBeforeAfter ? ((before - after) / before) * 100 : 0;
@@ -268,25 +298,26 @@ function MetricStageProgressPanel({
   const reduction = improvementPercent(before, after);
   const finalChange = after - before;
   const maxValue = Math.max(...stageRows.map((row) => row.value), 50, 1);
-  const lowerIsBetter = metric === 'dust' || metric === 'air_quality';
+  const lowerIsBetter = isLowerIsBetterMetric(metric);
+  const stageRanks = useMemo(() => getStagePerformanceRanks(stageRows, lowerIsBetter), [stageRows, lowerIsBetter]);
   const headlineValue = lowerIsBetter
     ? `${reduction.toFixed(1)}%`
     : `${finalChange >= 0 ? '+' : ''}${finalChange.toFixed(2)}`;
   const headlineCaption = lowerIsBetter
-    ? `Final ${metricMeta.label.toLowerCase()} improvement`
-    : `Final ${metricMeta.label.toLowerCase()} change`;
+    ? `Final ${metricMeta.label} Improvement`
+    : `Final ${metricMeta.label} Change`;
   const headlineBackground = lowerIsBetter
     ? reduction >= 20
-      ? 'var(--badge-good-bg)'
+      ? getPerformanceTone('best').panel
       : reduction > 0
-        ? 'var(--badge-moderate-bg)'
-        : 'var(--badge-poor-bg)'
-    : 'var(--bg-active)';
+        ? getPerformanceTone('middle').panel
+        : getPerformanceTone('worst').panel
+    : getPerformanceTone('middle').panel;
   const headlineColor = lowerIsBetter
     ? reduction > 0
-      ? 'var(--badge-good-text)'
-      : 'var(--badge-poor-text)'
-    : 'var(--text-accent)';
+      ? getPerformanceTone('best').text
+      : getPerformanceTone('worst').text
+    : getPerformanceTone('middle').text;
 
   return (
     <section className="cs-card">
@@ -323,20 +354,20 @@ function MetricStageProgressPanel({
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="text-sm font-bold" style={{ color: 'var(--text-heading)' }}>
-                Stage average {metricMeta.label.toLowerCase()} levels
+                Stage Average {metricMeta.label} Levels
               </h3>
               <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                 {lowerIsBetter
                   ? 'Lower after-cleaning values indicate better cleaning quality.'
-                  : `Compare how ${metricMeta.label.toLowerCase()} changed across cleaning stages.`}
+                  : `Compare how ${metricMeta.label} changed across cleaning stages.`}
               </p>
             </div>
-            <HelpHint text={`The chart compares average ${metricMeta.label.toLowerCase()} for before, during, and after cleaning.`} />
+            <HelpHint text={`The chart compares average ${metricMeta.label.toLowerCase()} for Before, During, and After cleaning.`} />
           </div>
 
           <div className="mt-5 flex h-72 items-end gap-4 rounded-2xl border px-4 pb-4 pt-8" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-color)' }}>
             {stageRows.map((row) => {
-              const tone = SESSION_STAGE_TONES[row.stage];
+              const tone = getPerformanceTone(stageRanks[row.stage]);
               const height = Math.max(12, (row.value / maxValue) * 210);
               const isActive = activeStage === row.stage;
 
@@ -363,7 +394,7 @@ function MetricStageProgressPanel({
                     }}
                   />
                   <span className="text-xs font-bold uppercase tracking-[0.14em]" style={{ color: 'var(--text-secondary)' }}>
-                    {row.stage}
+                    {row.stage[0].toUpperCase() + row.stage.slice(1)}
                   </span>
                 </button>
               );
@@ -373,7 +404,7 @@ function MetricStageProgressPanel({
 
         <div className="grid gap-3">
           {cards.map((card) => {
-            const tone = SESSION_STAGE_TONES[card.stage];
+            const tone = getPerformanceTone(stageRanks[card.stage]);
             const isActive = activeStage === card.stage;
             const averageStat = card.stats[0];
 
@@ -505,7 +536,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
       if (stage === 'before') {
         return `${normalizedPercent(value, reference).toFixed(1)}%`;
       }
-      if (metric === 'dust' || metric === 'air_quality') {
+      if (isLowerIsBetterMetric(metric)) {
         return `${improvementPercent(before, value).toFixed(1)}%`;
       }
       const delta = value - before;
@@ -514,20 +545,20 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
 
     const getMetricCaption = (stage: SessionType) => {
       if (stage === 'before') {
-        if (metric === 'dust') return 'Dust load';
-        if (metric === 'air_quality') return 'Air load';
+        if (metric === 'dust') return 'Dust Load';
+        if (metric === 'air_quality') return 'Air Load';
         return 'Baseline';
       }
-      if (metric === 'dust') return 'Dust reduction';
-      if (metric === 'air_quality') return 'Air improvement';
-      return `${METRIC_META[metric].label} change`;
+      if (metric === 'dust') return 'Dust Reduction';
+      if (metric === 'air_quality') return 'Air Improvement';
+      return `${METRIC_META[metric].label} Change`;
     };
 
     const getStats = (stage: SessionType, value: number) => {
       const delta = value - before;
       const baseStats = [
         {
-          label: `Average ${METRIC_META[metric].label.toLowerCase()}`,
+          label: `Average ${METRIC_META[metric].label}`,
           value: `${value.toFixed(2)} ${METRIC_META[metric].unit}`,
           fill: normalizedPercent(value, reference),
         },
@@ -538,7 +569,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
         return [
           ...baseStats,
           {
-            label: 'Air status',
+            label: 'Air Status',
             value: status,
             fill: statusStrength(status),
           },
@@ -549,7 +580,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
         return [
           ...baseStats,
           {
-            label: metric === 'dust' ? 'Safe target' : 'Baseline reference',
+            label: metric === 'dust' ? 'Safe Target' : 'Baseline Reference',
             value: metric === 'dust' ? `50 ${METRIC_META.dust.unit}` : `${value.toFixed(2)} ${METRIC_META[metric].unit}`,
             fill: metric === 'dust' ? normalizedPercent(50, reference) : 100,
           },
@@ -559,7 +590,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
       return [
         ...baseStats,
         {
-          label: 'Change vs before',
+          label: 'Change vs Before',
           value: `${delta >= 0 ? '+' : ''}${delta.toFixed(2)} ${METRIC_META[metric].unit}`,
           fill: metric === 'dust'
             ? improvementPercent(before, value)
@@ -603,12 +634,12 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
         <div className="cs-card">
           <p className="cs-card-header">Average {METRIC_META[metric].label}</p>
           <p className="text-3xl font-extrabold" style={{ color: 'var(--text-heading)' }}>{summary.average.toFixed(2)}</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Current range</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Current Range</p>
         </div>
         <div className="cs-card">
           <p className="cs-card-header">Anomaly Points</p>
           <p className="text-3xl font-extrabold" style={{ color: 'var(--text-heading)' }}>{anomalies.length}</p>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Metric + spike rules</p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Metric + Spike Rules</p>
         </div>
         <div className="cs-card">
           <p className="cs-card-header">Condition</p>
@@ -671,7 +702,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
               {metricInsight.headline}
             </div>
             <div className="rounded-md px-3 py-2" style={{ background: 'var(--bg-input)', color: 'var(--text-secondary)' }}>
-              <span className="font-semibold" style={{ color: 'var(--text-heading)' }}>Recommended action</span>
+              <span className="font-semibold" style={{ color: 'var(--text-heading)' }}>Recommended Action</span>
               <br />
               {metricInsight.action}
             </div>
@@ -704,7 +735,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
       {metric !== 'dust' ? (
         <section className="grid grid-cols-1 gap-5">
           <div className="cs-card">
-            <p className="cs-card-header">Session-level Comparison</p>
+            <p className="cs-card-header">Session-Level Comparison</p>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={sessionBars.map((row) => ({ ...row, session_label: formatSessionLabel({ house_id: data.sessions?.find((session) => session.session_id === row.session_id)?.house_id || '-', room_id: data.sessions?.find((session) => session.session_id === row.session_id)?.room_id || '-', session_type: row.session_type }) }))}>
@@ -723,7 +754,7 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
 
       <section className="grid grid-cols-1 xl:grid-cols-2 gap-5">
         <div className="cs-card">
-          <p className="cs-card-header">Session Drill-down</p>
+          <p className="cs-card-header">Session Drill-Down</p>
           <div className="max-h-72 overflow-y-auto space-y-2">
             {(data?.sessions || []).map((session) => {
               const active = selectedSessionId === session.session_id;
@@ -743,11 +774,11 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold">{formatSessionLabel(session)}</span>
                     <span className={anomalyCount > 0 ? 'badge-poor' : 'badge-good'}>
-                      {anomalyCount > 0 ? `${anomalyCount} anomalies` : 'normal'}
+                      {anomalyCount > 0 ? `${anomalyCount} Anomalies` : 'Normal'}
                     </span>
                   </div>
                   <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    Stage: {session.session_type} | Total readings: {session.total_readings}
+                    Stage: {session.session_type[0].toUpperCase() + session.session_type.slice(1)} | Total Readings: {session.total_readings}
                   </p>
                 </button>
               );
