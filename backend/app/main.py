@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 import os
 from pathlib import Path
@@ -29,6 +30,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+demo_video_dir = Path(__file__).resolve().parents[1] / "data" / "Demo Video"
+app.mount("/assets/help-demo", StaticFiles(directory=demo_video_dir), name="help-demo")
 
 # CORS config
 app.add_middleware(

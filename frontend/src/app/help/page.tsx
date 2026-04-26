@@ -55,6 +55,8 @@ const quickStart = [
   },
 ];
 
+const demoVideoUrl = '/api/help/demo-video';
+
 const sections: DocSection[] = [
   {
     id: 'overview',
@@ -428,6 +430,33 @@ export default function HelpPage() {
                   </div>
                 );
               })}
+            </div>
+            <div className="mt-5 grid grid-cols-1 gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+              <div className="rounded-lg border p-4" style={{ background: 'var(--bg-input)', borderColor: 'var(--border-light)' }}>
+                <h3 className="text-sm font-bold" style={{ color: 'var(--text-heading)' }}>
+                  Demo walkthrough
+                </h3>
+                <p className="mt-2 text-sm leading-6" style={{ color: 'var(--text-secondary)' }}>
+                  Watch the recorded demo to see the recommended workflow from filtering data to reading the dashboard and using the assistant.
+                </p>
+                <div className="mt-4 grid gap-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                  <p>1. Apply the date range and load a session.</p>
+                  <p>2. Review the Overview page and metric pages.</p>
+                  <p>3. Use the assistant for explanations and comparisons.</p>
+                </div>
+              </div>
+              <div className="overflow-hidden rounded-lg border" style={{ background: 'var(--bg-input)', borderColor: 'var(--border-light)' }}>
+                <video
+                  controls
+                  preload="metadata"
+                  className="block w-full"
+                  style={{ aspectRatio: '16 / 9', background: 'black' }}
+                  aria-label="CleanSight AI demo walkthrough video"
+                >
+                  <source src={demoVideoUrl} type="video/mp4" />
+                  Your browser does not support the embedded demo video.
+                </video>
+              </div>
             </div>
           </section>
 
