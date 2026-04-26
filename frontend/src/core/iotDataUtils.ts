@@ -5,6 +5,21 @@ export type TimeRangeSelection = {
   endIndex: number;
 };
 
+export function isSameTimeRangeSelection(
+  left: TimeRangeSelection | null,
+  right: TimeRangeSelection | null
+): boolean {
+  if (left === right) {
+    return true;
+  }
+
+  if (!left || !right) {
+    return false;
+  }
+
+  return left.startIndex === right.startIndex && left.endIndex === right.endIndex;
+}
+
 export type AnomalyFlag = {
   reading_id: string;
   session_id: string;

@@ -28,6 +28,7 @@ import {
   detectAnomalies,
   filterBySessionType,
   filterByTimeRange,
+  isSameTimeRangeSelection,
   METRIC_META,
   metricSummary,
   statusFromAQI,
@@ -296,10 +297,13 @@ export default function DashboardPage() {
                       travellerWidth={8}
                       onChange={(event) => {
                         if (!event || event.startIndex == null || event.endIndex == null) {
-                          setBrushRange(null);
+                          setBrushRange((current) => (current === null ? current : null));
                           return;
                         }
-                        setBrushRange({ startIndex: event.startIndex, endIndex: event.endIndex });
+                        const nextRange = { startIndex: event.startIndex, endIndex: event.endIndex };
+                        setBrushRange((current) =>
+                          isSameTimeRangeSelection(current, nextRange) ? current : nextRange
+                        );
                       }}
                     />
                   </LineChart>

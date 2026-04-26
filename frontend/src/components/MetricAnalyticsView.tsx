@@ -23,6 +23,7 @@ import {
   filterBySessionType,
   filterByTimeRange,
   formatSessionLabel,
+  isSameTimeRangeSelection,
   METRIC_META,
   metricSummary,
   statusFromAQI,
@@ -138,16 +139,6 @@ function buildMetricInsight({
     stageNote: activeStage === 'all' ? 'All cleaning stages are included.' : `Only the ${activeStage} stage is selected.`,
   };
 }
-
-type StageTone = {
-  accent: string;
-  track: string;
-  text: string;
-  glow: string;
-  headerFrom: string;
-  headerTo: string;
-  panel: string;
-};
 
 type StageMetricCard = {
   stage: SessionType;
@@ -659,10 +650,13 @@ export default function MetricAnalyticsView({ metric, title }: { metric: MetricK
                   travellerWidth={8}
                   onChange={(event) => {
                     if (!event || event.startIndex == null || event.endIndex == null) {
-                      setBrushRange(null);
+                      setBrushRange((current) => (current === null ? current : null));
                       return;
                     }
-                    setBrushRange({ startIndex: event.startIndex, endIndex: event.endIndex });
+                    const nextRange = { startIndex: event.startIndex, endIndex: event.endIndex };
+                    setBrushRange((current) =>
+                      isSameTimeRangeSelection(current, nextRange) ? current : nextRange
+                    );
                   }}
                 />
               </LineChart>
