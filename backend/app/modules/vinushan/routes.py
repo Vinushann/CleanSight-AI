@@ -472,3 +472,296 @@ async def get_dashboard_visualization(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to load visualization data: {str(exc)}",
         ) from exc
+
+
+# ---------------------------------------------------------------------------
+# AI Explainability & Model Insights endpoint
+# ---------------------------------------------------------------------------
+
+def _compute_feature_importance(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compute normalised feature importance using variance-weighted correlation."""
+    features = ["dust", "air_quality", "temperature", "humidity"]
+    scores_raw: dict[str, float] = {}
+    score_values = [
+        _to_float(r.get("cleanliness_score")) for r in readings
+        if _to_float(r.get("cleanliness_score")) is not None
+    ]
+    if len(score_values) < 3:
+        return [{"feature": f, "importance": round(1 / len(features), 3)} for f in features]
+
+    score_mean = mean(score_values)
+    score_var = mean([(v - score_mean) ** 2 for v in score_values])
+    if score_var == 0:
+        return [{"feature": f, "importance": round(1 / len(features), 3)} for f in features]
+
+    for feat in features:
+        feat_values = [
+            (_to_float(r.get(feat)), _to_float(r.get("cleanliness_score")))
+            for r in readings
+            if _to_float(r.get(feat)) is not None and _to_float(r.get("cleanliness_score")) is not None
+        ]
+        if len(feat_values) < 3:
+            scores_raw[feat] = 0.0
+            continue
+        fv = [x[0] for x in feat_values]
+        sv = [x[1] for x in feat_values]
+        fm = mean(fv)
+        sm = mean(sv)
+        cov = mean([(a - fm) * (b - sm) for a, b in zip(fv, sv)])
+        f_var = mean([(v - fm) ** 2 for v in fv])
+        if f_var == 0:
+            scores_raw[feat] = 0.0
+        else:
+            scores_raw[feat] = abs(cov) / (f_var ** 0.5 * score_var ** 0.5)
+
+    total = sum(scores_raw.values()) or 1.0
+    result = [{"feature": f, "importance": round(scores_raw[f] / total, 3)} for f in features]
+    result.sort(key=lambda x: x["importance"], reverse=True)
+    return result
+
+
+def _compute_prediction_confidence(readings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Derive model confidence from the latest reading's score proximity to class boundaries."""
+    latest = None
+    for r in reversed(readings):
+        if _to_float(r.get("cleanliness_score")) is not None:
+            latest = r
+            break
+
+    if not latest:
+        return {"label": None, "score": None, "confidence": None}
+
+    score = _to_float(latest.get("cleanliness_score")) or 0
+    status_label = (latest.get("cleanliness_status") or "unknown").lower()
+
+    # Distance from nearest decision boundary (55 or 85)
+    boundaries = [55, 85]
+    min_dist = min(abs(score - b) for b in boundaries)
+    # Confidence is higher when further from boundaries, scaled to 0-100
+    confidence = min(100, round(50 + min_dist * 1.5, 1))
+
+    return {"label": status_label, "score": round(score, 1), "confidence": confidence}
+
+
+def _compute_error_metrics(readings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute MAE, average drift, and accuracy from actual-vs-predicted pairs."""
+    pairs: list[tuple[float, float]] = []
+    for r in readings:
+        actual = _to_float(r.get("cleanliness_score"))
+        predicted = _to_float(r.get("predicted_next_cleanliness"))
+        if actual is not None and predicted is not None:
+            pairs.append((actual, predicted))
+
+    if not pairs:
+        return {"mae": None, "average_drift": None, "accuracy": None, "pair_count": 0}
+
+    errors = [abs(a - p) for a, p in pairs]
+    drifts = [p - a for a, p in pairs]
+    correct = sum(1 for e in errors if e < 10)
+
+    return {
+        "mae": round(mean(errors), 2),
+        "average_drift": round(mean(drifts), 2),
+        "accuracy": round((correct / len(pairs)) * 100, 1),
+        "pair_count": len(pairs),
+    }
+
+
+def _compute_error_distribution(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Bucket prediction errors into histogram ranges."""
+    buckets = {"0-5": 0, "5-10": 0, "10-20": 0, "20+": 0}
+    for r in readings:
+        actual = _to_float(r.get("cleanliness_score"))
+        predicted = _to_float(r.get("predicted_next_cleanliness"))
+        if actual is None or predicted is None:
+            continue
+        error = abs(actual - predicted)
+        if error < 5:
+            buckets["0-5"] += 1
+        elif error < 10:
+            buckets["5-10"] += 1
+        elif error < 20:
+            buckets["10-20"] += 1
+        else:
+            buckets["20+"] += 1
+
+    return [{"range": k, "count": v} for k, v in buckets.items()]
+
+
+def _compute_forecast_bounds(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build time-series with confidence bands around predictions."""
+    # First pass: compute rolling error to set margin
+    errors: list[float] = []
+    for r in readings:
+        actual = _to_float(r.get("cleanliness_score"))
+        predicted = _to_float(r.get("predicted_next_cleanliness"))
+        if actual is not None and predicted is not None:
+            errors.append(abs(actual - predicted))
+
+    base_margin = mean(errors) * 1.5 if errors else 8.0
+
+    result: list[dict[str, Any]] = []
+    for r in readings:
+        ts = _to_int(r.get("timestamp_ms"), default=0)
+        actual = _to_float(r.get("cleanliness_score"))
+        predicted = _to_float(r.get("predicted_next_cleanliness"))
+        if ts == 0 or (actual is None and predicted is None):
+            continue
+
+        pred_val = predicted if predicted is not None else actual
+        result.append({
+            "timestamp_ms": ts,
+            "actual": round(actual, 1) if actual is not None else None,
+            "predicted": round(pred_val, 1) if pred_val is not None else None,
+            "upper": round(min(100, pred_val + base_margin), 1) if pred_val is not None else None,
+            "lower": round(max(0, pred_val - base_margin), 1) if pred_val is not None else None,
+        })
+
+    return result[-60:]  # Last 60 points
+
+
+def _compute_decision_rules(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Derive decision tree rules from the latest reading using trained model thresholds."""
+    latest = None
+    for r in reversed(readings):
+        if _to_float(r.get("dust")) is not None:
+            latest = r
+            break
+
+    if not latest:
+        return []
+
+    dust = _to_float(latest.get("dust")) or 0
+    aq = _to_float(latest.get("air_quality")) or 0
+    temp = _to_float(latest.get("temperature")) or 0
+    hum = _to_float(latest.get("humidity")) or 0
+    status_label = (latest.get("cleanliness_status") or "unknown").lower()
+
+    rules: list[dict[str, Any]] = []
+    # Build the rule path that led to this classification
+    if status_label == "dirty":
+        rules.append({"condition": f"dust = {dust:.1f}", "operator": ">", "threshold": 40, "met": dust > 40})
+        rules.append({"condition": f"air_quality = {aq:.1f}", "operator": ">", "threshold": 150, "met": aq > 150})
+        rules.append({"result": "dirty", "confidence": "high" if dust > 60 else "moderate"})
+    elif status_label == "needs_attention":
+        rules.append({"condition": f"dust = {dust:.1f}", "operator": ">", "threshold": 20, "met": dust > 20})
+        rules.append({"condition": f"air_quality = {aq:.1f}", "operator": "<=", "threshold": 200, "met": aq <= 200})
+        rules.append({"condition": f"humidity = {hum:.1f}", "operator": ">", "threshold": 60, "met": hum > 60})
+        rules.append({"result": "needs_attention", "confidence": "moderate"})
+    else:
+        rules.append({"condition": f"dust = {dust:.1f}", "operator": "<=", "threshold": 25, "met": dust <= 25})
+        rules.append({"condition": f"air_quality = {aq:.1f}", "operator": "<=", "threshold": 100, "met": aq <= 100})
+        rules.append({"condition": f"temperature = {temp:.1f}", "operator": "in range", "threshold": "24-30°C", "met": 24 <= temp <= 30})
+        rules.append({"result": "clean", "confidence": "high" if dust < 15 else "moderate"})
+
+    return rules
+
+
+def _compute_relationship_data(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Extract scatter plot data for input-vs-output analysis."""
+    result: list[dict[str, Any]] = []
+    for r in readings:
+        dust = _to_float(r.get("dust"))
+        aq = _to_float(r.get("air_quality"))
+        score = _to_float(r.get("cleanliness_score"))
+        if score is None:
+            continue
+        anomaly = (r.get("anomaly_prediction") or "normal").lower()
+        result.append({
+            "dust": round(dust, 2) if dust is not None else None,
+            "air_quality": round(aq, 2) if aq is not None else None,
+            "cleanliness": round(score, 1),
+            "anomaly": anomaly,
+        })
+    return result[-120:]
+
+
+def _compute_drift_over_time(readings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compute absolute prediction error at each timestep."""
+    result: list[dict[str, Any]] = []
+    for r in readings:
+        ts = _to_int(r.get("timestamp_ms"), default=0)
+        actual = _to_float(r.get("cleanliness_score"))
+        predicted = _to_float(r.get("predicted_next_cleanliness"))
+        if ts == 0 or actual is None or predicted is None:
+            continue
+        result.append({
+            "timestamp_ms": ts,
+            "error": round(abs(actual - predicted), 2),
+        })
+    return result[-60:]
+
+
+@router.get("/explainability")
+async def get_explainability_insights(
+    house_id: str = Query(..., min_length=1),
+    room_id: str = Query(..., min_length=1),
+) -> dict[str, Any]:
+    db = get_db()
+    if not db:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Database not connected. Please ensure Firebase is setup.",
+        )
+
+    normalized_house_id = house_id.strip()
+    normalized_room_id = room_id.strip()
+
+    try:
+        readings: list[dict[str, Any]] = []
+
+        for doc in db.collection(SESSIONS_COLLECTION).stream():
+            payload = doc.to_dict() or {}
+            doc_house_id = str(payload.get("house_id") or "").strip()
+            doc_room_id = str(payload.get("room_id") or "").strip()
+
+            if doc_house_id != normalized_house_id or doc_room_id != normalized_room_id:
+                continue
+
+            session_id = str(payload.get("session_id") or doc.id)
+            readings_docs = list(
+                db.collection(SESSIONS_COLLECTION)
+                .document(session_id)
+                .collection(READINGS_SUBCOLLECTION)
+                .stream()
+            )
+            for reading_doc in readings_docs:
+                reading_payload = reading_doc.to_dict() or {}
+                readings.append({
+                    "timestamp_ms": _to_int(reading_payload.get("timestamp_ms"), default=0),
+                    "dust": _to_float(reading_payload.get("dust")),
+                    "air_quality": _to_float(reading_payload.get("air_quality")),
+                    "temperature": _to_float(reading_payload.get("temperature")),
+                    "humidity": _to_float(reading_payload.get("humidity")),
+                    "cleanliness_score": _to_float(reading_payload.get("cleanliness_score")),
+                    "cleanliness_status": reading_payload.get("cleanliness_status"),
+                    "predicted_next_cleanliness": _to_float(reading_payload.get("predicted_next_cleanliness")),
+                    "next_dust_prediction": _to_float(reading_payload.get("next_dust_prediction")),
+                    "anomaly_prediction": reading_payload.get("anomaly_prediction"),
+                    "prediction_reason": reading_payload.get("prediction_reason"),
+                    "anomaly_reason": reading_payload.get("anomaly_reason"),
+                })
+
+        readings.sort(key=lambda item: item.get("timestamp_ms") or 0)
+
+        return {
+            "status": "success",
+            "house_id": normalized_house_id,
+            "room_id": normalized_room_id,
+            "readings_count": len(readings),
+            "feature_importance": _compute_feature_importance(readings),
+            "prediction_confidence": _compute_prediction_confidence(readings),
+            "error_metrics": _compute_error_metrics(readings),
+            "error_distribution": _compute_error_distribution(readings),
+            "forecast_bounds": _compute_forecast_bounds(readings),
+            "decision_rules": _compute_decision_rules(readings),
+            "relationship_data": _compute_relationship_data(readings),
+            "drift_over_time": _compute_drift_over_time(readings),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to compute explainability insights: {str(exc)}",
+        ) from exc

@@ -133,3 +133,75 @@ export type VisualizationPayload = {
   metrics: VisualizationMetrics;
   house_context?: HouseContext;
 };
+
+// ---------------------------------------------------------------------------
+// AI Explainability types
+// ---------------------------------------------------------------------------
+
+export type FeatureImportanceItem = {
+  feature: string;
+  importance: number;
+};
+
+export type PredictionConfidence = {
+  label: string | null;
+  score: number | null;
+  confidence: number | null;
+};
+
+export type ErrorMetrics = {
+  mae: number | null;
+  average_drift: number | null;
+  accuracy: number | null;
+  pair_count: number;
+};
+
+export type ErrorBucket = {
+  range: string;
+  count: number;
+};
+
+export type ForecastBoundPoint = {
+  timestamp_ms: number;
+  actual: number | null;
+  predicted: number | null;
+  upper: number | null;
+  lower: number | null;
+};
+
+export type DecisionRule = {
+  condition?: string;
+  operator?: string;
+  threshold?: number | string;
+  met?: boolean;
+  result?: string;
+  confidence?: string;
+};
+
+export type RelationshipPoint = {
+  dust: number | null;
+  air_quality: number | null;
+  cleanliness: number;
+  anomaly: string;
+};
+
+export type DriftPoint = {
+  timestamp_ms: number;
+  error: number;
+};
+
+export type ExplainabilityPayload = {
+  status: 'success';
+  house_id: string;
+  room_id: string;
+  readings_count: number;
+  feature_importance: FeatureImportanceItem[];
+  prediction_confidence: PredictionConfidence;
+  error_metrics: ErrorMetrics;
+  error_distribution: ErrorBucket[];
+  forecast_bounds: ForecastBoundPoint[];
+  decision_rules: DecisionRule[];
+  relationship_data: RelationshipPoint[];
+  drift_over_time: DriftPoint[];
+};
+

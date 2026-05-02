@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  Area,
   Bar,
   BarChart,
   CartesianGrid,
@@ -10,6 +11,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  LineChart,
   ResponsiveContainer,
   Scatter,
   ScatterChart,
@@ -20,7 +22,7 @@ import {
 } from 'recharts';
 
 import { getApiBaseUrl } from '@/core/apiBase';
-import type { HouseOption, SessionType, VisualizationPayload } from '@/core/iotTypes';
+import type { ExplainabilityPayload, HouseOption, SessionType, VisualizationPayload } from '@/core/iotTypes';
 
 type FilterState = {
   houseId: string;
@@ -215,6 +217,7 @@ export default function IoTEdgeAiAnalyticsPage() {
   const [loadingFilters, setLoadingFilters] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [explainData, setExplainData] = useState<ExplainabilityPayload | null>(null);
 
   const rooms = useMemo(() => {
     const selectedHouse = houses.find((house) => house.house_id === filters.houseId);
@@ -313,6 +316,22 @@ export default function IoTEdgeAiAnalyticsPage() {
     return () => {
       canceled = true;
     };
+  }, [apiBaseUrl, filters.houseId, filters.roomId]);
+
+  useEffect(() => {
+    let canceled = false;
+    const loadExplainability = async () => {
+      if (!filters.houseId || !filters.roomId) return;
+      try {
+        const query = new URLSearchParams({ house_id: filters.houseId, room_id: filters.roomId });
+        const response = await fetch(`${apiBaseUrl}/api/v1/dashboard/explainability?${query.toString()}`, { cache: 'no-store' });
+        const payload = await response.json();
+        if (!response.ok || canceled) return;
+        setExplainData(payload as ExplainabilityPayload);
+      } catch { if (!canceled) setExplainData(null); }
+    };
+    void loadExplainability();
+    return () => { canceled = true; };
   }, [apiBaseUrl, filters.houseId, filters.roomId]);
 
   const insightReadings = useMemo(() => {
@@ -897,6 +916,239 @@ export default function IoTEdgeAiAnalyticsPage() {
               </div>
             </section>
           </div>
+        </>
+      ) : null}
+
+      {explainData && explainData.readings_count > 0 ? (
+        <>
+          <div className="cs-card">
+            <p className="cs-card-header text-base">AI Explainability &amp; Model Insights</p>
+            <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+              Deep-dive into how the edge AI model makes decisions, its confidence levels, reliability metrics, and the
+              relationships between sensor inputs and predictions.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <section className="cs-card">
+              <p className="cs-card-header text-base">Feature Importance</p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Which sensor features influence the cleanliness classification most.
+              </p>
+              <div className="mt-4 h-[260px]">
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={explainData.feature_importance} layout="vertical" margin={{ left: 16, right: 16 }}>
+                      <CartesianGrid stroke="rgba(148,163,184,0.14)" horizontal={false} />
+                      <XAxis type="number" domain={[0, 1]} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <YAxis type="category" dataKey="feature" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} width={90} />
+                      <Tooltip contentStyle={{ background: 'rgba(15, 23, 42, 0.96)', border: '1px solid rgba(90, 168, 255, 0.18)', borderRadius: '16px', color: '#f8fafc' }} formatter={(value: number) => [value.toFixed(3), 'Importance']} />
+                      <Bar dataKey="importance" name="Importance" radius={[0, 10, 10, 0]} fill="#5aa8ff" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="cs-card">
+              <p className="cs-card-header text-base">Model Confidence</p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                How certain the model is about the latest classification decision.
+              </p>
+              <div className="mt-6 space-y-5">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Predicted Label</span>
+                  <span className="rounded-full border px-4 py-1 text-sm font-semibold capitalize" style={getStatusTone(explainData.prediction_confidence.label)}>
+                    {prettify(explainData.prediction_confidence.label, 'Unknown')}
+                  </span>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Cleanliness Score</span>
+                    <span className="text-2xl font-bold" style={{ color: 'var(--text-heading)' }}>
+                      {explainData.prediction_confidence.score != null ? `${explainData.prediction_confidence.score}%` : '-'}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Confidence</span>
+                    <span className="text-lg font-bold" style={{ color: 'var(--text-heading)' }}>
+                      {explainData.prediction_confidence.confidence != null ? `${explainData.prediction_confidence.confidence}%` : '-'}
+                    </span>
+                  </div>
+                  <div className="h-4 overflow-hidden rounded-full" style={{ background: 'rgba(148, 163, 184, 0.12)' }}>
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${explainData.prediction_confidence.confidence ?? 0}%`, background: explainData.prediction_confidence.label === 'clean' ? '#66dc98' : explainData.prediction_confidence.label === 'dirty' ? '#ff7a6f' : '#ffb454' }} />
+                  </div>
+                </div>
+                <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                  Confidence is higher when the prediction score is further from decision boundaries (55% and 85%).
+                </p>
+              </div>
+            </section>
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <section className="cs-card">
+              <p className="cs-card-header text-base">Error Analysis</p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>How reliable the model predictions are over time.</p>
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                {[
+                  { label: 'MAE', value: explainData.error_metrics.mae != null ? explainData.error_metrics.mae.toFixed(2) : '-' },
+                  { label: 'Avg Drift', value: explainData.error_metrics.average_drift != null ? `${explainData.error_metrics.average_drift > 0 ? '+' : ''}${explainData.error_metrics.average_drift.toFixed(2)}` : '-' },
+                  { label: 'Accuracy', value: explainData.error_metrics.accuracy != null ? `${explainData.error_metrics.accuracy}%` : '-' },
+                ].map((m) => (
+                  <div key={m.label} className="rounded-xl border p-3 text-center" style={{ borderColor: 'rgba(125, 170, 255, 0.12)', background: 'rgba(255,255,255,0.02)' }}>
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>{m.label}</p>
+                    <p className="mt-1 text-xl font-bold" style={{ color: 'var(--text-heading)' }}>{m.value}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 h-[200px]">
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={explainData.error_distribution}>
+                      <CartesianGrid stroke="rgba(148,163,184,0.14)" vertical={false} />
+                      <XAxis dataKey="range" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                      <Tooltip contentStyle={{ background: 'rgba(15, 23, 42, 0.96)', border: '1px solid rgba(90, 168, 255, 0.18)', borderRadius: '16px', color: '#f8fafc' }} />
+                      <Bar dataKey="count" name="Readings" radius={[8, 8, 0, 0]} fill="#7B61FF" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="cs-card">
+              <p className="cs-card-header text-base">Decision Path View</p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                The logical rule path the decision tree followed for the latest reading.
+              </p>
+              <div className="mt-4 rounded-2xl border p-4" style={{ borderColor: 'rgba(125, 170, 255, 0.12)', background: 'rgba(0,0,0,0.15)' }}>
+                <div className="space-y-2 font-mono text-sm">
+                  {explainData.decision_rules.length ? (
+                    explainData.decision_rules.map((rule, i) => (
+                      <div key={i}>
+                        {rule.result ? (
+                          <div className="mt-3 flex items-center gap-2">
+                            <span style={{ color: '#7ef0a7' }}>THEN →</span>
+                            <span className="rounded-full border px-3 py-1 text-xs font-semibold uppercase" style={getStatusTone(rule.result)}>{rule.result}</span>
+                            <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>(confidence: {rule.confidence})</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <span style={{ color: '#5aa8ff' }}>{i === 0 ? 'IF' : 'AND'}</span>
+                            <span style={{ color: 'var(--text-primary)' }}>{rule.condition}</span>
+                            <span style={{ color: '#ffb454' }}>{rule.operator} {String(rule.threshold)}</span>
+                            <span className="ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold" style={{ background: rule.met ? 'rgba(46, 204, 113, 0.14)' : 'rgba(255, 122, 111, 0.14)', color: rule.met ? '#7ef0a7' : '#ff9b92' }}>
+                              {rule.met ? '✓ MET' : '✗ NOT MET'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <p style={{ color: 'var(--text-secondary)' }}>No decision rules available.</p>
+                  )}
+                </div>
+              </div>
+              <p className="mt-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
+                Rules are derived from the trained Decision Tree classifier thresholds applied to the latest sensor reading.
+              </p>
+            </section>
+          </div>
+
+          <section className="cs-card">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="cs-card-header text-base">Forecast with Uncertainty Bands</p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Actual vs predicted cleanliness with shaded confidence intervals showing prediction uncertainty.</p>
+              </div>
+              <div className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{explainData.forecast_bounds.length} points</div>
+            </div>
+            <div className="mt-4 h-[360px]">
+              {chartsReady ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={explainData.forecast_bounds.map((p) => ({ ...p, timeLabel: p.timestamp_ms ? new Date(p.timestamp_ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }))}>
+                    <CartesianGrid stroke="rgba(148,163,184,0.14)" vertical={false} />
+                    <XAxis dataKey="timeLabel" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ background: 'rgba(15, 23, 42, 0.96)', border: '1px solid rgba(90, 168, 255, 0.18)', borderRadius: '16px', color: '#f8fafc' }} />
+                    <Legend />
+                    <Area type="monotone" dataKey="upper" stroke="none" fill="rgba(90, 168, 255, 0.12)" name="Upper Bound" connectNulls />
+                    <Area type="monotone" dataKey="lower" stroke="none" fill="var(--bg-card)" name="Lower Bound" connectNulls />
+                    <Line type="monotone" dataKey="actual" name="Actual Cleanliness" stroke="#5aa8ff" strokeWidth={2.4} dot={false} connectNulls />
+                    <Line type="monotone" dataKey="predicted" name="Predicted" stroke="#7ef0a7" strokeWidth={2.4} strokeDasharray="6 6" dot={false} connectNulls />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              ) : null}
+            </div>
+          </section>
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+            <section className="cs-card">
+              <p className="cs-card-header text-base">Dust vs Cleanliness</p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>How dust levels correlate with predicted cleanliness scores.</p>
+              <div className="mt-4 h-[300px]">
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                      <CartesianGrid stroke="rgba(148,163,184,0.14)" />
+                      <XAxis type="number" dataKey="dust" name="Dust" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <YAxis type="number" dataKey="cleanliness" name="Cleanliness" domain={[0, 100]} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <Tooltip cursor={{ strokeDasharray: '4 4' }} contentStyle={{ background: 'rgba(15, 23, 42, 0.96)', border: '1px solid rgba(90, 168, 255, 0.18)', borderRadius: '16px', color: '#f8fafc' }} />
+                      <Legend />
+                      <Scatter name="Normal" data={explainData.relationship_data.filter((d) => d.anomaly !== 'anomaly' && d.dust != null)} fill="#63d996" />
+                      <Scatter name="Anomaly" data={explainData.relationship_data.filter((d) => d.anomaly === 'anomaly' && d.dust != null)} fill="#ff7a6f" />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                ) : null}
+              </div>
+            </section>
+
+            <section className="cs-card">
+              <p className="cs-card-header text-base">Air Quality vs Cleanliness</p>
+              <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>How air quality readings correlate with predicted cleanliness scores.</p>
+              <div className="mt-4 h-[300px]">
+                {chartsReady ? (
+                  <ResponsiveContainer width="100%" height="100%">
+                    <ScatterChart margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+                      <CartesianGrid stroke="rgba(148,163,184,0.14)" />
+                      <XAxis type="number" dataKey="air_quality" name="Air Quality" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <YAxis type="number" dataKey="cleanliness" name="Cleanliness" domain={[0, 100]} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                      <Tooltip cursor={{ strokeDasharray: '4 4' }} contentStyle={{ background: 'rgba(15, 23, 42, 0.96)', border: '1px solid rgba(90, 168, 255, 0.18)', borderRadius: '16px', color: '#f8fafc' }} />
+                      <Legend />
+                      <Scatter name="Normal" data={explainData.relationship_data.filter((d) => d.anomaly !== 'anomaly' && d.air_quality != null)} fill="#63d996" />
+                      <Scatter name="Anomaly" data={explainData.relationship_data.filter((d) => d.anomaly === 'anomaly' && d.air_quality != null)} fill="#ff7a6f" />
+                    </ScatterChart>
+                  </ResponsiveContainer>
+                ) : null}
+              </div>
+            </section>
+          </div>
+
+          <section className="cs-card">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="cs-card-header text-base">Model Stability Over Time</p>
+                <p className="mt-2 text-sm" style={{ color: 'var(--text-secondary)' }}>Tracks the absolute prediction error at each reading to show whether model performance is stable or degrading.</p>
+              </div>
+              <div className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border-color)', color: 'var(--text-secondary)' }}>{explainData.drift_over_time.length} points</div>
+            </div>
+            <div className="mt-4 h-[280px]">
+              {chartsReady ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={explainData.drift_over_time.map((p) => ({ ...p, timeLabel: p.timestamp_ms ? new Date(p.timestamp_ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '' }))}>
+                    <CartesianGrid stroke="rgba(148,163,184,0.14)" vertical={false} />
+                    <XAxis dataKey="timeLabel" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickLine={false} axisLine={false} />
+                    <Tooltip contentStyle={{ background: 'rgba(15, 23, 42, 0.96)', border: '1px solid rgba(90, 168, 255, 0.18)', borderRadius: '16px', color: '#f8fafc' }} />
+                    <Line type="monotone" dataKey="error" name="Prediction Error" stroke="#ffb454" strokeWidth={2} dot={{ r: 3, fill: '#ffb454' }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : null}
+            </div>
+          </section>
         </>
       ) : null}
     </section>
