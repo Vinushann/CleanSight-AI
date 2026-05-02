@@ -270,6 +270,16 @@ def _generate_reading(session_type: SessionType, progress: float, index: int) ->
     )
     cleaning_urgency = _derive_cleaning_urgency(cleanliness_status, cleanliness_score, anomaly_status)
 
+    # Simulate actual vs predicted with a slight error margin
+    actual_cleanliness = cleanliness_score
+    # Generate a predicted score that is slightly off from the actual score (1 to 8 points off)
+    prediction_error = random.uniform(-8.0, 8.0) if anomaly_status != "anomaly" else random.uniform(-15.0, 15.0)
+    predicted_next_cleanliness = _clamp(actual_cleanliness + prediction_error, 0, 100)
+    
+    # Generate a next dust prediction that is slightly off
+    dust_error = random.uniform(-5.0, 5.0)
+    next_dust_prediction = _clamp(dust + dust_error + (10 if session_type == "during" else -2), 0, 500)
+
     return {
         "dust": round(dust, 2),
         "air_quality": round(air_quality, 2),
@@ -279,6 +289,9 @@ def _generate_reading(session_type: SessionType, progress: float, index: int) ->
         "cleanliness_status": cleanliness_status,
         "anomaly_status": anomaly_status,
         "cleanliness_score": cleanliness_score,
+        "actual_cleanliness": actual_cleanliness,
+        "predicted_next_cleanliness": round(predicted_next_cleanliness, 1),
+        "next_dust_prediction": round(next_dust_prediction, 1),
         "cleaning_urgency": cleaning_urgency,
         "cleanliness_prediction": cleanliness_status,
         "anomaly_prediction": anomaly_status,

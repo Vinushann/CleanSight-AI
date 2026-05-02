@@ -196,6 +196,10 @@ def write_sensor_reading(payload: SensorDataRequest) -> dict:
         reading_document['anomaly_reason'] = payload.anomaly_reason
     if payload.next_dust_prediction is not None:
         reading_document['next_dust_prediction'] = payload.next_dust_prediction
+    if payload.predicted_next_cleanliness is not None:
+        reading_document['predicted_next_cleanliness'] = payload.predicted_next_cleanliness
+    if payload.actual_cleanliness is not None:
+        reading_document['actual_cleanliness'] = payload.actual_cleanliness
     if payload.model_source is not None:
         reading_document['model_source'] = payload.model_source
     if payload.model_version is not None:
