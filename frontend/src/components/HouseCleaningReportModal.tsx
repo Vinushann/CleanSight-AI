@@ -426,21 +426,38 @@ function getEmailBody({
     getStageValue(airByStage, 'before'),
     getStageValue(airByStage, 'after')
   );
+  const hasRecordedEvidence = data.sessions.length > 0 || rows.length > 0;
+  const dateWindow = data.date_from
+    ? data.date_to && data.date_to !== data.date_from
+      ? `${data.date_from} to ${data.date_to}`
+      : data.date_from
+    : 'the selected report window';
+
+  if (!hasRecordedEvidence) {
+    return [
+      'Dear Client,',
+      '',
+      `Please find the cleaning completion report update for House ${data.house_id}, Room ${data.room_id}.`,
+      '',
+      `For ${dateWindow}, the selected report window did not contain recorded cleaning sessions or sensor readings for this location.`,
+      'Please review the selected date or session filter if you would like us to resend the report with recorded cleaning evidence for this room.',
+      '',
+      'Regards,',
+      'Fern Janitorial (Pvt) Ltd',
+    ].join('\n');
+  }
 
   return [
     'Dear Client,',
     '',
     `Please find the cleaning completion report summary for House ${data.house_id}, Room ${data.room_id}.`,
     '',
-    `Started: ${formatDateTime(timeline.start)}`,
-    `Ended: ${formatDateTime(timeline.end)}`,
-    `Total sessions: ${data.sessions.length}`,
-    `Total sensor readings: ${rows.length}`,
-    `Cleaning quality: ${formatLabel(decision.cleaning_effectiveness)}`,
-    `Recommended action: ${formatLabel(decision.recommended_action)}`,
-    `Dust improvement: ${dustImprovement == null ? 'insufficient staged data' : `${dustImprovement}% reduction`}`,
-    `Air quality improvement: ${airImprovement == null ? 'insufficient staged data' : `${airImprovement}% reduction`}`,
-    `Anomaly signals: ${anomalies.length}`,
+    `Fern Janitorial (Pvt) Ltd completed the recorded cleaning activity for this location. The monitored cleaning window started at ${formatDateTime(timeline.start)} and ended at ${formatDateTime(timeline.end)}, covering ${data.sessions.length} session(s) and ${rows.length} sensor reading(s).`,
+    '',
+    `Overall cleaning quality was assessed as ${formatLabel(decision.cleaning_effectiveness)}, with the recommended action marked as ${formatLabel(decision.recommended_action)}.`,
+    `Dust improvement: ${dustImprovement == null ? 'insufficient staged data was available' : `${dustImprovement}% reduction after cleaning`}.`,
+    `Air quality improvement: ${airImprovement == null ? 'insufficient staged data was available' : `${airImprovement}% reduction after cleaning`}.`,
+    `Anomaly signals identified for review: ${anomalies.length}.`,
     '',
     'Regards,',
     'Fern Janitorial (Pvt) Ltd',
@@ -500,41 +517,13 @@ function getReportEmailMetrics({
 }
 
 async function getAiEmailBody(reportMetrics: ReturnType<typeof getReportEmailMetrics>): Promise<string> {
-  const prompt = `
-Write a polished professional email to a cleaning-service client.
-
-Use these CleanSight AI report metrics as factual evidence. Do not invent values. Keep it concise, client-friendly, and confident.
-
-Requirements:
-- Start with "Dear Client,"
-- Mention that Fern Janitorial (Pvt) Ltd completed cleaning for the specified house and room.
-- Include the cleaning start/end time, total sessions, total readings, cleaning quality, recommended action, dust improvement, air quality improvement, and anomaly signal count.
-- Explain the cleaning result in plain language.
-- End with "Regards," and "Fern Janitorial (Pvt) Ltd".
-- Return only the email body. No markdown, no subject line.
-
-Report metrics JSON:
-${JSON.stringify(reportMetrics, null, 2)}
-`.trim();
-
-  const response = await fetch('/api/chat', {
+  const response = await fetch('/api/report-email', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      messages: [{ role: 'user', content: prompt }],
-      dashboard_context: {
-        house_id: reportMetrics.house_id,
-        room_id: reportMetrics.room_id,
-        selected_page: '/report',
-        selected_chart: 'cleaning_report_email',
-        filters: {
-          session_type: reportMetrics.session_filter,
-          date_from: reportMetrics.date_from,
-          date_to: reportMetrics.date_to,
-        },
-      },
+      reportMetrics,
     }),
   });
 
@@ -542,8 +531,8 @@ ${JSON.stringify(reportMetrics, null, 2)}
     throw new Error(`Email draft request failed with status ${response.status}`);
   }
 
-  const text = await response.text();
-  const trimmed = text.trim();
+  const payload = await response.json();
+  const trimmed = String(payload?.body || '').trim();
 
   if (!trimmed || trimmed.includes('OPENAI_API_KEY is not configured')) {
     throw new Error('AI email draft is unavailable.');
@@ -671,7 +660,7 @@ export default function HouseCleaningReportModal({
 
     if (emailWindow) {
       emailWindow.document.write(
-        '<!doctype html><title>Preparing email...</title><p style="font-family: Arial, sans-serif; padding: 24px;">Preparing AI email draft...</p>'
+        '<!doctype html><title>Preparing email...</title><p style="font-family: Arial, sans-serif; padding: 24px;">Preparing email draft...</p>'
       );
       emailWindow.document.close();
     }
@@ -681,7 +670,7 @@ export default function HouseCleaningReportModal({
         getReportEmailMetrics({ data, rows, dustByStage, airByStage, anomalies, decision })
       );
     } catch {
-      setEmailError('AI email draft was unavailable, so the standard report email was used.');
+      setEmailError('Enhanced email drafting was unavailable, so the standard report email was used.');
     } finally {
       setEmailDrafting(false);
     }

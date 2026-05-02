@@ -6,6 +6,21 @@ export type HouseOption = {
   rooms: string[];
 };
 
+export type IoTNotification = {
+  notification_id: string;
+  title: string;
+  message: string;
+  category: string;
+  severity: string;
+  device_id: string | null;
+  session_id: string | null;
+  reading_key: string | null;
+  metadata: Record<string, unknown>;
+  read: boolean;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
 export type SessionRecord = {
   session_id: string;
   house_id: string;
@@ -26,10 +41,26 @@ export type ReadingPoint = {
   session_type: SessionType;
   timestamp_ms: number;
   recorded_at: string | null;
+  dust_voltage: number | null;
+  dust_raw_adc: number | null;
   dust: number | null;
   air_quality: number | null;
   temperature: number | null;
   humidity: number | null;
+  cleanliness_score: number | null;
+  cleanliness_status: string | null;
+  anomaly_status: string | null;
+  cleaning_urgency: string | null;
+  predicted_next_cleanliness: number | null;
+  actual_cleanliness: number | null;
+  trend_direction: string | null;
+  cleanliness_prediction: string | null;
+  anomaly_prediction: string | null;
+  next_dust_prediction: number | null;
+  prediction_reason: string | null;
+  anomaly_reason: string | null;
+  model_source: string | null;
+  model_version: string | null;
   dust_level: string | null;
   sensor_status: string | null;
 };

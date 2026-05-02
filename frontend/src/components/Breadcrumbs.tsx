@@ -27,6 +27,9 @@ function toTitle(segment: string): string {
 
 export default function Breadcrumbs() {
   const pathname = usePathname();
+  if (pathname.startsWith('/modules/iot')) {
+    return null;
+  }
 
   const parts = pathname.split('/').filter(Boolean);
   const crumbs = parts.map((part, index) => {

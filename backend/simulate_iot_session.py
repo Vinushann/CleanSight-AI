@@ -25,6 +25,9 @@ import requests
 from dotenv import load_dotenv
 
 SessionType = Literal["before", "during", "after"]
+CleanlinessStatus = Literal["clean", "needs_attention", "dirty"]
+AnomalyStatus = Literal["normal", "anomaly"]
+CleaningUrgency = Literal["low", "medium", "high", "critical"]
 
 load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
 DEFAULT_BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://127.0.0.1:8000").strip()
@@ -101,47 +104,171 @@ def _dust_level(dust: float) -> str:
     return "heavy"
 
 
-def _generate_pollution_factor(session_type: SessionType, progress: float, index: int) -> float:
-    """
-    Returns a smooth pollution intensity scalar used to derive dust + air_quality.
-    """
-    wave = 0.08 * math.sin(index * 0.55) + 0.04 * math.cos(index * 0.2)
-    jitter = random.gauss(0, 0.03)
+def _weighted_choice(choices: list[tuple[str, float]]) -> str:
+    labels = [label for label, _ in choices]
+    weights = [weight for _, weight in choices]
+    return random.choices(labels, weights=weights, k=1)[0]
 
-    if session_type == "before":
-        # High baseline, slight rise over time.
-        base = 0.60 + 0.22 * progress
-    elif session_type == "during":
-        # Ramping up with occasional spikes (disturbance while cleaning).
-        base = 0.95 + 0.70 * progress
-        if random.random() < 0.12:
-            base += random.uniform(0.12, 0.35)
+
+def _derive_cleanliness_status(score: int) -> CleanlinessStatus:
+    if score >= 85:
+        return "clean"
+    if score >= 55:
+        return "needs_attention"
+    return "dirty"
+
+
+def _derive_cleaning_urgency(
+    cleanliness_status: CleanlinessStatus,
+    cleanliness_score: int,
+    anomaly_status: AnomalyStatus,
+) -> CleaningUrgency:
+    if cleanliness_score < 40:
+        urgency: CleaningUrgency = "critical"
+    elif cleanliness_status == "dirty":
+        urgency = "high"
+    elif cleanliness_status == "needs_attention":
+        urgency = "medium"
     else:
-        # Starts high then decays as cleaning effect settles.
-        base = 1.35 * math.exp(-2.8 * progress) + 0.18
+        urgency = "low"
 
-    return max(0.02, base + wave + jitter)
+    if anomaly_status == "anomaly":
+        if urgency == "low":
+            return "medium"
+        if urgency == "medium":
+            return "high"
+    return urgency
+
+
+def _derive_anomaly_status(session_type: SessionType, progress: float, index: int) -> AnomalyStatus:
+    if session_type == "before":
+        anomaly_chance = 0.18
+        periodic_anomaly = index % 5 == 3
+    elif session_type == "during":
+        anomaly_chance = 0.28
+        periodic_anomaly = index % 4 == 2
+    else:
+        anomaly_chance = 0.14
+        periodic_anomaly = progress < 0.25 and index % 6 == 1
+
+    if periodic_anomaly or random.random() < anomaly_chance:
+        return "anomaly"
+    return "normal"
+
+
+def _select_cleanliness_score(session_type: SessionType, progress: float) -> int:
+    if session_type == "before":
+        status = _weighted_choice(
+            [
+                ("dirty", 0.62 + 0.12 * progress),
+                ("needs_attention", 0.38 - 0.12 * progress),
+            ]
+        )
+        if status == "dirty":
+            return random.randint(28, 54)
+        return random.randint(55, 69)
+
+    if session_type == "during":
+        status = _weighted_choice(
+            [
+                ("dirty", 0.78 + 0.10 * progress),
+                ("needs_attention", 0.22 - 0.10 * progress),
+            ]
+        )
+        if status == "dirty":
+            return random.randint(39, 54)
+        return random.randint(55, 72)
+
+    status = _weighted_choice(
+        [
+            ("clean", 0.72 + 0.23 * progress),
+            ("needs_attention", 0.28 - 0.23 * progress),
+        ]
+    )
+    if status == "clean":
+        return random.randint(85, 99)
+    return random.randint(80, 84)
+
+
+def _build_prediction_reason(
+    session_type: SessionType,
+    cleanliness_status: CleanlinessStatus,
+    cleanliness_score: int,
+) -> str:
+    if cleanliness_status == "clean":
+        return (
+            f"{session_type.title()} session settled into low dust and low air-quality load, "
+            f"supporting a strong cleanliness score of {cleanliness_score}%."
+        )
+    if cleanliness_status == "needs_attention":
+        return (
+            f"{session_type.title()} session shows moderate pollution buildup, so the room still needs attention "
+            f"with a cleanliness score of {cleanliness_score}%."
+        )
+    return (
+        f"{session_type.title()} session has elevated dust and air-quality readings, so the room is labeled dirty "
+        f"with a cleanliness score of {cleanliness_score}%."
+    )
+
+
+def _build_anomaly_reason(
+    session_type: SessionType,
+    anomaly_status: AnomalyStatus,
+    dust: float,
+    air_quality: float,
+) -> str:
+    if anomaly_status == "anomaly":
+        return (
+            f"{session_type.title()} session contains an unusual spike pattern "
+            f"(dust={dust:.1f}, air_quality={air_quality:.1f})."
+        )
+    return (
+        f"{session_type.title()} session remains within the expected sensor pattern "
+        f"(dust={dust:.1f}, air_quality={air_quality:.1f})."
+    )
 
 
 def _generate_reading(session_type: SessionType, progress: float, index: int) -> dict:
-    factor = _generate_pollution_factor(session_type, progress, index)
+    cleanliness_score = _select_cleanliness_score(session_type, progress)
+    cleanliness_status = _derive_cleanliness_status(cleanliness_score)
+    anomaly_status = _derive_anomaly_status(session_type, progress, index)
+    severity = 1.0 - (cleanliness_score / 100.0)
 
-    dust = _clamp(12 + factor * 125 + random.gauss(0, 4.0), 3, 500)
-    air_quality = _clamp(45 + factor * 180 + random.gauss(0, 8.0), 20, 600)
+    wave = math.sin(index * 0.55) * 2.5 + math.cos(index * 0.23) * 1.8
+    anomaly_dust_bump = random.uniform(8.0, 18.0) if anomaly_status == "anomaly" else 0.0
+    anomaly_aq_bump = random.uniform(22.0, 58.0) if anomaly_status == "anomaly" else 0.0
 
-    # Temperature/humidity move more gently and remain plausible.
-    if session_type == "during":
-        temp_base = 28.2 + 1.2 * progress
-        hum_base = 65.0 + 5.0 * progress
-    elif session_type == "before":
-        temp_base = 27.2 + 0.5 * progress
-        hum_base = 60.0 + 2.5 * progress
+    if session_type == "before":
+        dust_base = 16 + severity * 42 + progress * 8
+        aq_base = 75 + severity * 135 + progress * 18
+        temp_base = 27.1 + 0.6 * progress
+        hum_base = 59.0 + 3.0 * progress
+    elif session_type == "during":
+        spike = random.uniform(5.0, 14.0) if index % 3 == 1 else 0.0
+        dust_base = 22 + severity * 52 + progress * 12 + spike
+        aq_base = 95 + severity * 155 + progress * 28 + spike * 2.2
+        temp_base = 28.2 + 1.0 * progress
+        hum_base = 64.0 + 4.0 * progress
     else:
-        temp_base = 29.0 - 1.3 * progress
-        hum_base = 69.0 - 7.0 * progress
+        decay = math.exp(-2.5 * progress)
+        dust_base = 7 + severity * 26 + decay * 6
+        aq_base = 50 + severity * 78 + decay * 12
+        temp_base = 28.6 - 1.4 * progress
+        hum_base = 66.0 - 8.0 * progress
 
-    temperature = _clamp(temp_base + random.gauss(0, 0.28), 24.0, 36.0)
-    humidity = _clamp(hum_base + random.gauss(0, 1.9), 35.0, 92.0)
+    dust = _clamp(dust_base + wave + random.gauss(0, 2.0) + anomaly_dust_bump, 3, 500)
+    air_quality = _clamp(aq_base + wave * 2.5 + random.gauss(0, 5.0) + anomaly_aq_bump, 20, 600)
+    temperature = _clamp(
+        temp_base + random.gauss(0, 0.24) + (0.55 if anomaly_status == "anomaly" else 0.0),
+        24.0,
+        36.0,
+    )
+    humidity = _clamp(
+        hum_base + random.gauss(0, 1.5) + (2.0 if anomaly_status == "anomaly" else 0.0),
+        35.0,
+        92.0,
+    )
+    cleaning_urgency = _derive_cleaning_urgency(cleanliness_status, cleanliness_score, anomaly_status)
 
     return {
         "dust": round(dust, 2),
@@ -149,6 +276,25 @@ def _generate_reading(session_type: SessionType, progress: float, index: int) ->
         "temperature": round(temperature, 2),
         "humidity": round(humidity, 2),
         "dust_level": _dust_level(dust),
+        "cleanliness_status": cleanliness_status,
+        "anomaly_status": anomaly_status,
+        "cleanliness_score": cleanliness_score,
+        "cleaning_urgency": cleaning_urgency,
+        "cleanliness_prediction": cleanliness_status,
+        "anomaly_prediction": anomaly_status,
+        "prediction_reason": _build_prediction_reason(
+            session_type=session_type,
+            cleanliness_status=cleanliness_status,
+            cleanliness_score=cleanliness_score,
+        ),
+        "anomaly_reason": _build_anomaly_reason(
+            session_type=session_type,
+            anomaly_status=anomaly_status,
+            dust=dust,
+            air_quality=air_quality,
+        ),
+        "model_source": "synthetic_rule_engine",
+        "model_version": "tinyml-dataset-v1",
         "sensor_status": "ok",
     }
 
@@ -318,7 +464,9 @@ def run(config: Config) -> int:
                 print(
                     f"[{i + 1:03d}/{total_points}] "
                     f"dust={reading['dust']}, aq={reading['air_quality']}, "
-                    f"temp={reading['temperature']}, hum={reading['humidity']}"
+                    f"temp={reading['temperature']}, hum={reading['humidity']}, "
+                    f"status={reading['cleanliness_status']}, score={reading['cleanliness_score']}, "
+                    f"anomaly={reading['anomaly_status']}, urgency={reading['cleaning_urgency']}"
                 )
 
                 next_tick += config.interval_seconds

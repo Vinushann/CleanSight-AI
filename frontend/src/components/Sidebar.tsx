@@ -11,7 +11,7 @@ const sensorSubmenu = [
   { label: 'Humidity', href: '/modules/ayathma/humidity', icon: Droplets },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ hidden = false }: { hidden?: boolean }) {
   const pathname = usePathname();
   const [sensorsOpen, setSensorsOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -21,13 +21,17 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="w-60 flex-shrink-0 flex flex-col h-full"
+      className="flex-shrink-0 flex flex-col h-full overflow-hidden"
       style={{
+        width: hidden ? '0px' : '240px',
+        opacity: hidden ? 0 : 1,
+        pointerEvents: hidden ? 'none' : 'auto',
         background: 'var(--bg-sidebar)',
         borderRight: '1px solid var(--border-color)',
         backdropFilter: 'saturate(180%) blur(22px)',
-        transition: 'background-color 0.3s ease, border-color 0.3s ease',
+        transition: 'width 0.25s ease, opacity 0.2s ease, background-color 0.3s ease, border-color 0.3s ease',
       }}
+      aria-hidden={hidden}
     >
       {/* Brand */}
       <div

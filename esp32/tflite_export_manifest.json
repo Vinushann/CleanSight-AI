@@ -1,0 +1,116 @@
+{
+  "project": "CleanSight AI",
+  "pipeline": "training -> model.tflite -> model.h -> ESP32",
+  "dataset": "data/processed/cleansight_processed_dataset.csv",
+  "models": {
+    "cleanliness_classifier": {
+      "model_type": "tensorflow_classifier",
+      "features": [
+        "dust",
+        "air_quality",
+        "temperature",
+        "humidity",
+        "hour_of_day",
+        "dust_rolling_mean_3",
+        "air_quality_rolling_mean_3"
+      ],
+      "labels": {
+        "0": "clean",
+        "1": "needs_attention",
+        "2": "dirty"
+      },
+      "metrics": {
+        "accuracy": 0.9617021276595744
+      },
+      "normalization": {
+        "mean": [
+          123.68634796142578,
+          206.04034423828125,
+          28.208894729614258,
+          64.66616821289062,
+          6.650640964508057,
+          123.84811401367188,
+          206.29995727539062
+        ],
+        "variance": [
+          2501.674560546875,
+          5224.1474609375,
+          0.4792272448539734,
+          12.711389541625977,
+          0.30850547552108765,
+          2433.680908203125,
+          5048.076171875
+        ]
+      },
+      "tflite_path": "models/tflite/cleanliness_classifier.tflite",
+      "header_path": "models/tflite/cleanliness_classifier_model.h"
+    },
+    "anomaly_detector": {
+      "model_type": "tensorflow_binary_classifier",
+      "features": [
+        "dust",
+        "air_quality",
+        "temperature",
+        "humidity"
+      ],
+      "labels": {
+        "0": "normal",
+        "1": "anomaly"
+      },
+      "distilled_from": "isolation_forest_anomaly.pkl",
+      "metrics": {
+        "accuracy_against_original_model": 0.9574468085106383
+      },
+      "normalization": {
+        "mean": [
+          123.84526062011719,
+          206.13401794433594,
+          28.219810485839844,
+          64.75716400146484
+        ],
+        "variance": [
+          2483.237060546875,
+          5242.48388671875,
+          0.47155073285102844,
+          12.623262405395508
+        ]
+      },
+      "tflite_path": "models/tflite/anomaly_detector.tflite",
+      "header_path": "models/tflite/anomaly_detector_model.h"
+    },
+    "dust_forecaster": {
+      "model_type": "tensorflow_regressor",
+      "features": [
+        "dust_lag_1",
+        "air_quality_lag_1",
+        "temperature_lag_1",
+        "humidity_lag_1",
+        "hour_of_day"
+      ],
+      "target": "next_dust",
+      "metrics": {
+        "mae": 9.49414348602295,
+        "rmse": 12.000844289960394,
+        "r2": 0.9426079988479614
+      },
+      "normalization": {
+        "mean": [
+          124.6004409790039,
+          207.20680236816406,
+          28.206689834594727,
+          64.67662048339844,
+          6.633620738983154
+        ],
+        "variance": [
+          2474.29931640625,
+          5149.92919921875,
+          0.4814256727695465,
+          12.50269889831543,
+          0.309732049703598
+        ]
+      },
+      "tflite_path": "models/tflite/dust_forecaster.tflite",
+      "header_path": "models/tflite/dust_forecaster_model.h"
+    }
+  }
+}

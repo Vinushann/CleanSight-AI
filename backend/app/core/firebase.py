@@ -4,7 +4,7 @@ from typing import Optional
 
 import firebase_admin
 from dotenv import load_dotenv
-from firebase_admin import credentials, firestore
+from firebase_admin import credentials, delete_app, firestore
 
 # Global Firestore DB client
 db = None
@@ -81,3 +81,20 @@ def get_db():
     if db is None:
         initialize_firebase()
     return db
+
+
+def reconnect_firebase() -> bool:
+    global db
+    global _firebase_init_attempted
+
+    db = None
+    _firebase_init_attempted = False
+
+    try:
+        for app in list(firebase_admin._apps.values()):
+            delete_app(app)
+    except Exception:
+        pass
+
+    initialize_firebase()
+    return db is not None

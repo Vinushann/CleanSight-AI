@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { getApiBaseUrl } from '@/core/apiBase';
 
@@ -35,6 +35,66 @@ export default function IoTControlPage() {
   const [isStopping, setIsStopping] = useState(false);
 
   const hasActiveSession = useMemo(() => activeSession !== null, [activeSession]);
+
+  const hydrateSessionFromId = useCallback(
+    async (sessionId: string, fallback: ActiveSession | null = null) => {
+      const response = await fetch(`${apiBaseUrl}/api/session/${sessionId}/readings`, { cache: 'no-store' });
+      const payload = await response.json();
+      if (!response.ok || !payload.session) {
+        return fallback;
+      }
+
+      const session = payload.session as Partial<ActiveSession>;
+      return {
+        session_id: session.session_id || sessionId,
+        house_id: session.house_id || fallback?.house_id || '',
+        room_id: session.room_id || fallback?.room_id || '',
+        session_type: (session.session_type || fallback?.session_type || 'before') as SessionType,
+      };
+    },
+    [apiBaseUrl]
+  );
+
+  useEffect(() => {
+    let canceled = false;
+
+    const hydrateActiveSession = async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/api/device/control`, { cache: 'no-store' });
+        const payload = await response.json();
+
+        if (canceled || !response.ok) {
+          return;
+        }
+
+        if (payload.collecting && payload.session_id) {
+          const nextSession = await hydrateSessionFromId(payload.session_id, {
+            session_id: payload.session_id,
+            house_id: payload.house_id || '',
+            room_id: payload.room_id || '',
+            session_type: (payload.session_type || 'before') as SessionType,
+          });
+
+          if (nextSession && !canceled) {
+            setActiveSession(nextSession);
+            setHouseId(nextSession.house_id);
+            setRoomId(nextSession.room_id);
+            setSessionType(nextSession.session_type);
+            setStatusMessage('Collecting');
+          }
+        }
+      } catch {
+        if (!canceled) {
+          setStatusMessage((current) => (current === 'Collecting' ? current : 'Idle'));
+        }
+      }
+    };
+
+    void hydrateActiveSession();
+    return () => {
+      canceled = true;
+    };
+  }, [apiBaseUrl, hydrateSessionFromId]);
 
   const validateForm = () => {
     const errors: FieldErrors = {};
@@ -84,6 +144,33 @@ export default function IoTControlPage() {
       const payload = await response.json();
 
       if (!response.ok) {
+        if (response.status === 409 && String(payload.detail || '').toLowerCase().includes('already active')) {
+          try {
+            const controlResponse = await fetch(`${apiBaseUrl}/api/device/control`, { cache: 'no-store' });
+            const controlPayload = await controlResponse.json();
+
+            if (controlResponse.ok && controlPayload.collecting && controlPayload.session_id) {
+              const hydratedSession = await hydrateSessionFromId(controlPayload.session_id, {
+                session_id: controlPayload.session_id,
+                house_id: controlPayload.house_id || houseId.trim(),
+                room_id: controlPayload.room_id || roomId.trim(),
+                session_type: (controlPayload.session_type || sessionType || 'before') as SessionType,
+              });
+
+              if (hydratedSession) {
+                setActiveSession(hydratedSession);
+                setHouseId(hydratedSession.house_id);
+                setRoomId(hydratedSession.room_id);
+                setSessionType(hydratedSession.session_type);
+                setStatusMessage('Collecting');
+                setSuccessMessage(`Session already active: ${hydratedSession.session_id}`);
+              }
+              return;
+            }
+          } catch {
+            // Fall through to the original error below.
+          }
+        }
         throw new Error(payload.detail || 'Failed to start collection session.');
       }
 
@@ -137,6 +224,9 @@ export default function IoTControlPage() {
       setStatusMessage('Stopped');
       setSuccessMessage(`Session stopped successfully: ${activeSession.session_id}`);
       setActiveSession(null);
+      setHouseId('');
+      setRoomId('');
+      setSessionType('');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to stop collection session.';
       setErrorMessage(message);
@@ -291,6 +381,18 @@ export default function IoTControlPage() {
               {activeSession?.session_type || sessionType || '-'}
             </span>
           </div>
+          {hasActiveSession ? (
+            <div
+              className="rounded-xl px-3 py-3 text-sm"
+              style={{
+                background: 'color-mix(in srgb, var(--badge-good-bg) 18%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--badge-good-text) 28%, transparent)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              This session is still active after refresh. You can stop it from here.
+            </div>
+          ) : null}
         </div>
       </aside>
     </div>

@@ -16,6 +16,7 @@ class SensorReadingBase(BaseModel):
     room_volume: float = Field(..., description="Volume of the room in cubic meters")
 
     # Sensor metrics
+    dust_voltage: float = Field(..., description="Raw dust sensor voltage output")
     dust_concentration: float = Field(..., description="PM2.5 / PM10 equivalent concentration")
     gas_concentration_level: float = Field(..., description="VOC/Gas concentration level")
     temperature: float = Field(..., description="Temperature in Celsius")
