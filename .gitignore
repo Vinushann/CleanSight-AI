@@ -1,3 +1,5 @@
 backend/.env copy
 backend/env
 frontend/package-lock.json
+/backend/captures
+backend/service-account2.json
