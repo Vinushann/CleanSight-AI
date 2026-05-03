@@ -10,6 +10,7 @@ const NAV_ITEMS: Array<{ label: string; href: string }> = [
   { label: 'Controller', href: '/modules/iot' },
   { label: 'Realtime', href: '/modules/iot/realtime' },
   { label: 'Edge AI Analytics', href: '/modules/iot/ml-prediction' },
+  { label: 'Presence Detection', href: '/modules/iot/presence-detection' },
   { label: 'Device Health Monitor', href: '/modules/iot/device-health' },
   { label: 'Settings', href: '/modules/iot/settings' },
   { label: 'Help', href: '/modules/iot/help' },

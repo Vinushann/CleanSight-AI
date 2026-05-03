@@ -12,6 +12,7 @@ from app.core.firebase import initialize_firebase
 
 from app.modules.vinushan.routes import router as vinushan_router
 from app.modules.vishva.routes import router as vishva_router
+from app.modules.vishva.presence_routes import router as presence_router
 from app.modules.ayathma.routes import router as ayathma_router
 from app.modules.nandhika.routes import router as nandhika_router
 
@@ -58,6 +59,7 @@ app.include_router(vinushan_router, prefix="/api/v1/dashboard", tags=["Dashboard
 app.include_router(vishva_router, prefix="/api/v1/quality", tags=["Dust & Air Quality"])
 app.include_router(ayathma_router, prefix="/api/v1/environment", tags=["Temp & Humidity"])
 app.include_router(nandhika_router, prefix="/api/v1/auth", tags=["Auth & Users"])
+app.include_router(presence_router, prefix="/api/v1/presence", tags=["Presence Detection"])
 
 if __name__ == "__main__":
     import uvicorn

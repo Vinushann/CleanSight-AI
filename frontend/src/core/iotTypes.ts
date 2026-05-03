@@ -205,3 +205,86 @@ export type ExplainabilityPayload = {
   drift_over_time: DriftPoint[];
 };
 
+// ---------------------------------------------------------------------------
+// Presence Detection types (ESP32-CAM)
+// ---------------------------------------------------------------------------
+
+export type Detection = {
+  type: string;
+  label: string;
+  confidence: number;
+  bbox?: { x1: number; y1: number; x2: number; y2: number } | null;
+};
+
+export type CameraFrame = {
+  id: string;
+  deviceId: string | null;
+  roomId: string | null;
+  sessionId: string | null;
+  timestamp: number | null;
+  receivedAt: number | null;
+  imagePath: string | null;
+  sizeBytes: number | null;
+  detections: Detection[];
+  modelVersion: string | null;
+  latencyMs: number | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+};
+
+export type PresenceController = {
+  sessionId?: string;
+  roomId?: string;
+  status?: string;
+  startTime?: number;
+};
+
+export type ActivityStatus = {
+  sessionId?: string;
+  active?: boolean;
+  score?: number;
+  totalFrames?: number;
+  personFrames?: number;
+  toolFrames?: number;
+  cooccurFrames?: number;
+  toolLabels?: string[];
+  presenceStatus?: string;
+  presenceEvent?: string;
+  updatedAt?: number;
+};
+
+export type PresenceLivePayload = {
+  controller: PresenceController | null;
+  frame: CameraFrame | null;
+  activity: ActivityStatus | null;
+};
+
+export type PresenceAlert = {
+  key: string;
+  event: string;
+  status: string;
+  deviceId: string | null;
+  roomId: string | null;
+  timestamp: number | null;
+  absenceMs: number | null;
+  source: string | null;
+};
+
+export type ActivityTimelineEvent = {
+  key: string;
+  active: boolean;
+  score: number;
+  timestamp: number;
+  createdAt: number;
+};
+
+export type PresenceSession = {
+  sessionId: string;
+  roomId: string | null;
+  sessionName: string | null;
+  startTime: number | null;
+  endTime: number | null;
+  beforeDuration: number | null;
+  duringDuration: number | null;
+  afterDuration: number | null;
+};
