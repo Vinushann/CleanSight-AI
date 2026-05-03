@@ -3,3 +3,6 @@ backend/env
 frontend/package-lock.json
 /backend/captures
 backend/service-account2.json
+/backend/app/__pycache__
+/backend/app/core/__pycache__
+/backend/app/services/__pycache__
