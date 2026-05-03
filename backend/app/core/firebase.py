@@ -98,3 +98,71 @@ def reconnect_firebase() -> bool:
 
     initialize_firebase()
     return db is not None
+
+
+# ---------------------------------------------------------------------------
+# Firebase Realtime Database (RTDB) — second app for ESP32-CAM presence data
+# ---------------------------------------------------------------------------
+
+_rtdb_ref = None
+_rtdb_init_attempted = False
+
+RTDB_APP_NAME = "rtdb_presence"
+
+
+def _resolve_rtdb_credential_path() -> Optional[str]:
+    cred_path = os.getenv("RTDB_SERVICE_ACCOUNT_PATH")
+    if not cred_path:
+        # Fall back to the same cred used for Firestore
+        return _resolve_credential_path()
+
+    path = Path(cred_path).expanduser()
+    if not path.is_absolute():
+        backend_root = Path(__file__).resolve().parents[2]
+        path = backend_root / path
+
+    return str(path)
+
+
+def initialize_rtdb():
+    global _rtdb_ref, _rtdb_init_attempted
+    if _rtdb_ref is not None or _rtdb_init_attempted:
+        return
+    _rtdb_init_attempted = True
+    _load_local_env()
+
+    rtdb_url = os.getenv("FIREBASE_DATABASE_URL")
+    if not rtdb_url:
+        print("RTDB disabled: FIREBASE_DATABASE_URL not set in .env")
+        return
+
+    try:
+        # Check if the named app already exists
+        try:
+            rtdb_app = firebase_admin.get_app(RTDB_APP_NAME)
+        except ValueError:
+            cred_path = _resolve_rtdb_credential_path()
+            if cred_path and os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+            else:
+                cred = credentials.ApplicationDefault()
+            rtdb_app = firebase_admin.initialize_app(
+                cred,
+                {"databaseURL": rtdb_url},
+                name=RTDB_APP_NAME,
+            )
+
+        from firebase_admin import db as rtdb_module
+        _rtdb_ref = rtdb_module.reference("/", app=rtdb_app)
+        print(f"Firebase RTDB initialized successfully ({rtdb_url})")
+    except Exception as e:
+        print(f"Failed to initialize Firebase RTDB: {e}")
+
+
+def get_rtdb():
+    """Return the root RTDB reference, initializing on first call."""
+    global _rtdb_ref
+    if _rtdb_ref is None:
+        initialize_rtdb()
+    return _rtdb_ref
+

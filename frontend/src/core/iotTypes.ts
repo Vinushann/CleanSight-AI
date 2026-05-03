@@ -133,3 +133,158 @@ export type VisualizationPayload = {
   metrics: VisualizationMetrics;
   house_context?: HouseContext;
 };
+
+// ---------------------------------------------------------------------------
+// AI Explainability types
+// ---------------------------------------------------------------------------
+
+export type FeatureImportanceItem = {
+  feature: string;
+  importance: number;
+};
+
+export type PredictionConfidence = {
+  label: string | null;
+  score: number | null;
+  confidence: number | null;
+};
+
+export type ErrorMetrics = {
+  mae: number | null;
+  average_drift: number | null;
+  accuracy: number | null;
+  pair_count: number;
+};
+
+export type ErrorBucket = {
+  range: string;
+  count: number;
+};
+
+export type ForecastBoundPoint = {
+  timestamp_ms: number;
+  actual: number | null;
+  predicted: number | null;
+  upper: number | null;
+  lower: number | null;
+};
+
+export type DecisionRule = {
+  condition?: string;
+  operator?: string;
+  threshold?: number | string;
+  met?: boolean;
+  result?: string;
+  confidence?: string;
+};
+
+export type RelationshipPoint = {
+  dust: number | null;
+  air_quality: number | null;
+  cleanliness: number;
+  anomaly: string;
+};
+
+export type DriftPoint = {
+  timestamp_ms: number;
+  error: number;
+};
+
+export type ExplainabilityPayload = {
+  status: 'success';
+  house_id: string;
+  room_id: string;
+  readings_count: number;
+  feature_importance: FeatureImportanceItem[];
+  prediction_confidence: PredictionConfidence;
+  error_metrics: ErrorMetrics;
+  error_distribution: ErrorBucket[];
+  forecast_bounds: ForecastBoundPoint[];
+  decision_rules: DecisionRule[];
+  relationship_data: RelationshipPoint[];
+  drift_over_time: DriftPoint[];
+};
+
+// ---------------------------------------------------------------------------
+// Presence Detection types (ESP32-CAM)
+// ---------------------------------------------------------------------------
+
+export type Detection = {
+  type: string;
+  label: string;
+  confidence: number;
+  bbox?: { x1: number; y1: number; x2: number; y2: number } | null;
+};
+
+export type CameraFrame = {
+  id: string;
+  deviceId: string | null;
+  roomId: string | null;
+  sessionId: string | null;
+  timestamp: number | null;
+  receivedAt: number | null;
+  imagePath: string | null;
+  sizeBytes: number | null;
+  detections: Detection[];
+  modelVersion: string | null;
+  latencyMs: number | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+};
+
+export type PresenceController = {
+  sessionId?: string;
+  roomId?: string;
+  status?: string;
+  startTime?: number;
+};
+
+export type ActivityStatus = {
+  sessionId?: string;
+  active?: boolean;
+  score?: number;
+  totalFrames?: number;
+  personFrames?: number;
+  toolFrames?: number;
+  cooccurFrames?: number;
+  toolLabels?: string[];
+  presenceStatus?: string;
+  presenceEvent?: string;
+  updatedAt?: number;
+};
+
+export type PresenceLivePayload = {
+  controller: PresenceController | null;
+  frame: CameraFrame | null;
+  activity: ActivityStatus | null;
+};
+
+export type PresenceAlert = {
+  key: string;
+  event: string;
+  status: string;
+  deviceId: string | null;
+  roomId: string | null;
+  timestamp: number | null;
+  absenceMs: number | null;
+  source: string | null;
+};
+
+export type ActivityTimelineEvent = {
+  key: string;
+  active: boolean;
+  score: number;
+  timestamp: number;
+  createdAt: number;
+};
+
+export type PresenceSession = {
+  sessionId: string;
+  roomId: string | null;
+  sessionName: string | null;
+  startTime: number | null;
+  endTime: number | null;
+  beforeDuration: number | null;
+  duringDuration: number | null;
+  afterDuration: number | null;
+};

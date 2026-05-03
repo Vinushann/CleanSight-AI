@@ -101,6 +101,8 @@ class SensorDataRequest(BaseModel):
     prediction_reason: Optional[str] = None
     anomaly_reason: Optional[str] = None
     next_dust_prediction: Optional[float] = None
+    predicted_next_cleanliness: Optional[float] = None
+    actual_cleanliness: Optional[float] = None
     model_source: Optional[str] = None
     model_version: Optional[str] = None
 
