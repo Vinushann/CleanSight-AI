@@ -35,6 +35,11 @@ app = FastAPI(
 demo_video_dir = Path(__file__).resolve().parents[1] / "data" / "Demo Video"
 app.mount("/assets/help-demo", StaticFiles(directory=demo_video_dir), name="help-demo")
 
+# Serve ESP32-CAM captures saved by the MQTT ingestion backend
+captures_dir = Path(__file__).resolve().parents[1] / "captures"
+os.makedirs(captures_dir, exist_ok=True)
+app.mount("/captures", StaticFiles(directory=captures_dir), name="captures")
+
 # CORS config
 app.add_middleware(
     CORSMiddleware,

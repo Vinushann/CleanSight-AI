@@ -5,10 +5,10 @@ export function getApiBaseUrl(): string {
   }
 
   if (typeof window !== 'undefined') {
-    // Default to the current host on backend port 8000 so LAN access works
+    // Default to the current host on backend port 8001 so LAN access works
     // without forcing users to edit environment variables.
-    return `http://${window.location.hostname}:8000`;
+    return `http://${window.location.hostname}:8001`;
   }
 
-  return 'http://127.0.0.1:8000';
+  return 'http://127.0.0.1:8001';
 }

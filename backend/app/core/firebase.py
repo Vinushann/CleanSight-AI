@@ -19,7 +19,7 @@ def _load_local_env() -> None:
 
     # backend/.env
     backend_root = Path(__file__).resolve().parents[2]
-    load_dotenv(backend_root / ".env", override=False)
+    load_dotenv(backend_root / ".env", override=True)
     _env_loaded = True
 
 
